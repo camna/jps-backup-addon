@@ -41,7 +41,7 @@ This add-on installs Restic on your WordPress application node and configures it
 2. Configure the add-on with:
    - **Backup schedule**: When to run automatic backups
    - **Wasabi Endpoint**: Your Wasabi region endpoint (e.g., `s3.wasabisys.com`)
-   - **Wasabi Bucket**: A unique bucket for this environment's backups
+   - **Wasabi Bucket**: Your Wasabi bucket name (can be shared across multiple sites - each site's backups are stored in a separate folder using the environment name)
    - **Access Key ID**: Your Wasabi access key
    - **Secret Access Key**: Your Wasabi secret key
    - **Restic Password**: Password to encrypt the backup repository (keep this safe!)
