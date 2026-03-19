@@ -101,11 +101,26 @@ function BackupManager(config) {
         }
     }
 
+    me.escapeForShell = function (str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/\\/g, '\\\\')
+                  .replace(/"/g, '\\"')
+                  .replace(/\$/g, '\\$')
+                  .replace(/`/g, '\\`');
+    };
+
     me.getResticEnvVars = function() {
-        return 'export AWS_ACCESS_KEY_ID="%(wasabiAccessKeyId)" && ' +
-               'export AWS_SECRET_ACCESS_KEY="%(wasabiSecretAccessKey)" && ' +
-               'export RESTIC_REPOSITORY="s3:%(wasabiEndpoint)/%(wasabiBucket)/%(envName)" && ' +
-               'export RESTIC_PASSWORD="%(resticPassword)"';
+        var safeAccessKey = me.escapeForShell(config.wasabiAccessKeyId);
+        var safeSecretKey = me.escapeForShell(config.wasabiSecretAccessKey);
+        var safeEndpoint = me.escapeForShell(config.wasabiEndpoint);
+        var safeBucket = me.escapeForShell(config.wasabiBucket);
+        var safeEnvName = me.escapeForShell(config.envName);
+        var safePassword = me.escapeForShell(config.resticPassword);
+        
+        return 'export AWS_ACCESS_KEY_ID="' + safeAccessKey + '" && ' +
+               'export AWS_SECRET_ACCESS_KEY="' + safeSecretKey + '" && ' +
+               'export RESTIC_REPOSITORY="s3:' + safeEndpoint + '/' + safeBucket + '/' + safeEnvName + '" && ' +
+               'export RESTIC_PASSWORD="' + safePassword + '"';
     };
 
     me.backup = function () {
@@ -211,7 +226,7 @@ function BackupManager(config) {
 
         return me.exec([
             [me.cmd, [
-                me.getResticEnvVars() + ' && restic snapshots --json 2>/dev/null || echo "[]"'
+                me.getResticEnvVars() + ' && restic snapshots --json'
             ], listParams]
         ]);
     };
@@ -432,13 +447,30 @@ function BackupManager(config) {
                 }]), true, "root");
             }
 
+            var cmdFailed = false;
+            var errorMsg = "";
+
             if (resp.result != 0) {
+                cmdFailed = true;
+                errorMsg = resp.error || "API error";
+            } else if (resp.responses && resp.responses[0]) {
+                var cmdResp = resp.responses[0];
+                var exitCode = cmdResp.exitCode;
+                if (exitCode && exitCode != 0) {
+                    cmdFailed = true;
+                    errorMsg = "Exit code " + exitCode + ": " + (cmdResp.errOut || cmdResp.out || "").substring(0, 500);
+                    resp.result = Response.ERROR_UNKNOWN;
+                    resp.error = errorMsg;
+                }
+            }
+
+            if (cmdFailed) {
                 var title = "Backup failed for " + config.envName,
-                    text = "Backup failed for the environment " + config.envName + " of " + user.email + " with error message " + resp.responses[0].errOut;
+                    text = "Backup failed for the environment " + config.envName + " of " + user.email + " with error: " + errorMsg;
                 try {
                     api.message.email.Send(appid, signature, null, user.email, user.email, title, text);
                 } catch (ex) {
-                    emailResp = error(Response.ERROR_UNKNOWN, toJSON(ex));
+                    log("Failed to send error email: " + toJSON(ex));
                 }
             }
             return resp;

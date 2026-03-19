@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 BASE_URL=$2
 BACKUP_TYPE=$3
@@ -77,6 +78,10 @@ function rotate_snapshots(){
 
 function create_snapshot(){
     DUMP_NAME=$(date "+%F_%H%M%S_%Z")
+    BACKUP_ADDON_REPO=$(echo ${BASE_URL}|sed 's|https:\/\/raw.githubusercontent.com\/||'|awk -F / '{print $1"/"$2}')
+    BACKUP_ADDON_BRANCH=$(echo ${BASE_URL}|sed 's|https:\/\/raw.githubusercontent.com\/||'|awk -F / '{print $3}')
+    BACKUP_ADDON_COMMIT_ID=$(git ls-remote https://github.com/${BACKUP_ADDON_REPO}.git 2>/dev/null | grep "/${BACKUP_ADDON_BRANCH}$" | awk '{print $1}')
+    [ -z "${BACKUP_ADDON_COMMIT_ID}" ] && BACKUP_ADDON_COMMIT_ID="unknown"
     echo $(date) ${ENV_NAME} "Begin uploading the ${DUMP_NAME} snapshot to Wasabi" | tee -a ${BACKUP_LOG_FILE}  
     { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_READ_CONCURRENCY=8 restic backup -q --tag "${DUMP_NAME}" --tag "${BACKUP_ADDON_COMMIT_ID}" --tag "${BACKUP_TYPE}" ${APP_PATH} ~/wp_db_backup.sql | tee -a $BACKUP_LOG_FILE; } || { echo "Backup snapshot creation failed."; exit 1; }
     echo $(date) ${ENV_NAME} "End uploading the ${DUMP_NAME} snapshot to Wasabi" | tee -a ${BACKUP_LOG_FILE}
