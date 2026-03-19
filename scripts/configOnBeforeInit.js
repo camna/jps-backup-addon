@@ -1,50 +1,5 @@
-var storage_unavailable_markup = "";
-var resp = api.env.control.GetEnvs();
-if (resp.result !== 0) return resp;
-var envs = [];
-var nodes = {};
-var currentStorageExists = false;
 var scheduleType = '${settings.scheduleType}';
-for (var i = 0, envInfo, env; envInfo = resp.infos[i]; i++) {
-    if (envInfo.envGroups.includes("WP Backup") || 
-        envInfo.envGroups.includes("Backup storage nodes") || 
-       (envInfo.env.properties && envInfo.env.properties.projectScope == "backup")) {
-        env = envInfo.env
-        if (env.status == 1) {
-            for (var j = 0, node; node = envInfo.nodes[j]; j++) {
-                nodes[env.envName] = nodes[env.envName] || [];
-                nodes[env.envName].groups = nodes[env.envName].groups || {};
-                if (!nodes[env.envName].groups[node.nodeGroup]) nodes[env.envName].push({
-                    value: node.nodeGroup,
-                    caption: (node.displayName || node.name) + ' (' + node.nodeGroup + ')'
-                });
-                nodes[env.envName].groups[node.nodeGroup] = true;
-                if ( env.envName == '${settings.storageName}' ) {
-                    currentStorageExists = true;
-                }
-            }
-            if (nodes[env.envName] && nodes[env.envName].length > 0) {
-                envs.push({
-                    value: env.envName,
-                    caption: (env.displayName + " (" + env.envName + ")"  || env.envName)
-                });
-            }
-        }
-    }
-}
 
-jps.settings.main.fields[1].values = envs;
-jps.settings.main.fields[1].default = "";
-if (envs.length > 0) {
-    if (currentStorageExists == true) {
-        jps.settings.main.fields[1].default = '${settings.storageName}';
-    } else {
-        jps.settings.main.fields[1].default = envs[0].value;
-    }
-} else {
-    storage_unavailable_markup = "There are no available backup storages on current account."
-}
-      
 import java.util.TimeZone;
 var zones = toNative(TimeZone.getAvailableIDs());
 var values = {};
@@ -78,48 +33,13 @@ if (scheduleType == '1') {
       "name": "days",
       "defaultMargins": "0 12 0 0",
       "items": [
-        {
-          "name": "sun",
-          "value": sun,
-          "type": "checkbox",
-          "caption": "Su"
-        },
-        {
-          "name": "mon",
-          "value": mon,
-          "type": "checkbox",
-          "caption": "Mo"
-        },
-        {
-          "name": "tue",
-          "value": tue,
-          "type": "checkbox",
-          "caption": "Tu"
-        },
-        {
-          "name": "wed",
-          "value": wed,
-          "type": "checkbox",
-          "caption": "We"
-        },
-        {
-          "name": "thu",
-          "value": thu,
-          "type": "checkbox",
-          "caption": "Th"
-        },
-        {
-          "name": "fri",
-          "value": fri,
-          "type": "checkbox",
-          "caption": "Fr"
-        },
-        {
-          "name": "sat",
-          "value": sat,
-          "type": "checkbox",
-          "caption": "Sa"
-        }
+        { "name": "sun", "value": sun, "type": "checkbox", "caption": "Su" },
+        { "name": "mon", "value": mon, "type": "checkbox", "caption": "Mo" },
+        { "name": "tue", "value": tue, "type": "checkbox", "caption": "Tu" },
+        { "name": "wed", "value": wed, "type": "checkbox", "caption": "We" },
+        { "name": "thu", "value": thu, "type": "checkbox", "caption": "Th" },
+        { "name": "fri", "value": fri, "type": "checkbox", "caption": "Fr" },
+        { "name": "sat", "value": sat, "type": "checkbox", "caption": "Sa" }
       ]
     };
     jps.settings.main.fields[0].showIf[2][1] = selectedDays;
@@ -129,13 +49,11 @@ if (scheduleType == '1') {
     jps.settings.main.fields[0].showIf[3][0].default = '${settings.cronTime}';
 }
 
-jps.settings.main.fields[2].default = '${settings.backupCount}';
-jps.settings.main.fields[3].value = ${settings.isAlwaysUmount};
-
-if (storage_unavailable_markup.length > 0) {
-    jps.settings.main.fields.push(
-        {"type": "displayfield", "cls": "warning", "height": 30, "hideLabel": true, "markup": storage_unavailable_markup}
-    )
-}
+jps.settings.main.fields[1].default = '${settings.wasabiEndpoint}';
+jps.settings.main.fields[2].default = '${settings.wasabiBucket}';
+jps.settings.main.fields[3].default = '${settings.wasabiAccessKeyId}';
+jps.settings.main.fields[4].default = '${settings.wasabiSecretAccessKey}';
+jps.settings.main.fields[5].default = '${settings.resticPassword}';
+jps.settings.main.fields[6].default = '${settings.backupCount}';
 
 return settings;
