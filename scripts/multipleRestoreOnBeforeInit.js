@@ -19,7 +19,7 @@ if (envInfo.result != 0) {
                       'export AWS_SECRET_ACCESS_KEY="${settings.wasabiSecretAccessKey}" && ' +
                       'export RESTIC_REPOSITORY="s3:${settings.wasabiEndpoint}/${settings.wasabiBucket}/${env.envName}" && ' +
                       'export RESTIC_PASSWORD="${settings.resticPassword}" && ' +
-                      'restic snapshots --json 2>/dev/null || echo "[]"';
+                      'restic snapshots --json 2>&1';
         
         var cmdResp = api.env.control.ExecCmdById('${env.envName}', session, cpNode.id, 
             toJSON([{"command": listCmd, "params": ""}]), true, "root");
@@ -27,15 +27,26 @@ if (envInfo.result != 0) {
         if (cmdResp.result != 0) {
             error_markup = "Unable to list backups: " + (cmdResp.error || "command failed");
         } else {
-            try {
-                var output = cmdResp.responses[0].out || "[]";
-                var snapshots = toNative(new JSONArray(String(output)));
-                backupListPrepared = prepareBackups(snapshots);
-                if (backupListPrepared.length === 0) {
-                    error_markup = "No backups found in the repository. Create a backup first.";
+            var output = cmdResp.responses[0].out || "";
+            var errOut = cmdResp.responses[0].errOut || "";
+            var exitCode = cmdResp.responses[0].exitCode;
+            
+            if (exitCode && exitCode != 0) {
+                if (exitCode == 10) {
+                    error_markup = "Backup repository not initialized. Create a backup first.";
+                } else {
+                    error_markup = "Failed to list backups (exit " + exitCode + "): " + (errOut || output).substring(0, 200);
                 }
-            } catch (e) {
-                error_markup = "Unable to parse backup list: " + e.message;
+            } else {
+                try {
+                    var snapshots = toNative(new JSONArray(String(output)));
+                    backupListPrepared = prepareBackups(snapshots);
+                    if (backupListPrepared.length === 0) {
+                        error_markup = "No backups found in the repository. Create a backup first.";
+                    }
+                } catch (e) {
+                    error_markup = "Unable to parse backup list: " + e.message + ". Output: " + output.substring(0, 100);
+                }
             }
         }
     }

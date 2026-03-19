@@ -146,12 +146,6 @@ function BackupManager(config) {
                 baseUrl: config.baseUrl
             }],
             [me.cmd, [
-                'bash /root/%(envName)_backup-logic.sh update_restic'
-            ], {
-                nodeId: config.backupExecNode,
-                envName: config.envName
-            }],
-            [me.cmd, [
                 me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
             ], backupCallParams],
             [me.cmd, [
@@ -186,16 +180,13 @@ function BackupManager(config) {
             [me.checkEnvStatus],
             [me.checkCurrentlyRunningBackup],
             [me.cmd, [
+                'trap "jem service start; rm -f /root/.backupid /root/wp_db_backup.sql" EXIT',
                 'echo $(date) %(envName) Restoring the snapshot $(cat /root/.backupid)',
-                'restic self-update 2>&1 || true',
                 me.getResticEnvVars(),
                 'jem service stop',
                 'SNAPSHOT_ID=$(restic snapshots --json | jq -r \'.[] | select(.tags[] | contains("\'$(cat /root/.backupid)\'")) | .short_id\' | head -1)',
                 '[ -n "${SNAPSHOT_ID}" ] || { echo "Snapshot not found"; exit 1; }',
-                'GOGC=20 restic restore ${SNAPSHOT_ID} --target /'
-            ],
-            restoreParams],
-            [me.cmd, [
+                'GOGC=20 restic restore ${SNAPSHOT_ID} --target /',
                 'echo $(date) %(envName) Restoring the database from snapshot $(cat /root/.backupid)',
                 '! which mysqld || service mysql start 2>&1',
                 'for i in DB_HOST DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat %(appPath)/wp-config.php | grep ${i} |grep -v \'^[[:space:]]*#\' | tr -d \'[[:blank:]]\' | awk -F \',\' \'{print $2}\' | tr -d "\\"\');"|tr -d \'\\r\'|tail -n 1); done',
@@ -203,12 +194,7 @@ function BackupManager(config) {
                 'mysql -u${DB_USER} -p${DB_PASSWORD} -h ${DB_HOST} --execute="CREATE DATABASE IF NOT EXISTS ${DB_NAME};"',
                 'mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_PASSWORD} ${DB_NAME} --force < /root/wp_db_backup.sql'
             ],
-            restoreParams],
-            [me.cmd, ['rm -f /root/.backupid /root/wp_db_backup.sql', 'jem service start'],
-            {
-                nodeId: config.backupExecNode,
-                envName: config.envName
-            }]
+            restoreParams]
         ]);
     };
 
@@ -245,6 +231,11 @@ function BackupManager(config) {
         };
     };
 
+    me.escapeForJs = function (str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    };
+
     me.createScript = function createScript() {
         var url = me.getScriptUrl("backup-main.js"),
             scriptName = config.scriptName,
@@ -253,7 +244,19 @@ function BackupManager(config) {
         try {
             scriptBody = new Transport().get(url);
 
-            scriptBody = me.replaceText(scriptBody, config);
+            var safeConfig = {};
+            for (var key in config) {
+                if (config.hasOwnProperty(key)) {
+                    safeConfig[key] = config[key];
+                }
+            }
+            safeConfig.wasabiEndpoint = me.escapeForJs(config.wasabiEndpoint);
+            safeConfig.wasabiBucket = me.escapeForJs(config.wasabiBucket);
+            safeConfig.wasabiAccessKeyId = me.escapeForJs(config.wasabiAccessKeyId);
+            safeConfig.wasabiSecretAccessKey = me.escapeForJs(config.wasabiSecretAccessKey);
+            safeConfig.resticPassword = me.escapeForJs(config.resticPassword);
+
+            scriptBody = me.replaceText(scriptBody, safeConfig);
 
             api.dev.scripting.DeleteScript(scriptName);
 

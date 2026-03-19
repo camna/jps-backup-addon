@@ -53,16 +53,19 @@ function update_restic(){
 function check_backup_repo(){
     echo $(date) ${ENV_NAME} "Checking backup repository at ${RESTIC_REPOSITORY}" | tee -a $BACKUP_LOG_FILE
     
-    GOGC=20 restic snapshots 2>/dev/null
-    REPO_EXISTS=$?
+    GOGC=20 restic cat config >/dev/null 2>&1
+    REPO_CHECK_EXIT=$?
     
-    if [ "${REPO_EXISTS}" != "0" ]; then
-        echo $(date) ${ENV_NAME} "Initializing new backup repository" | tee -a $BACKUP_LOG_FILE
-        GOGC=20 restic init || { echo "Failed to initialize backup repository."; exit 1; }
-    else
+    if [ "${REPO_CHECK_EXIT}" -eq 0 ]; then
         echo $(date) ${ENV_NAME} "Checking the backup repository integrity and consistency" | tee -a $BACKUP_LOG_FILE;
         GOGC=20 restic unlock 2>/dev/null
         GOGC=20 restic -q check --read-data-subset=5% || { echo "Backup repository integrity check failed."; exit 1; }
+    elif [ "${REPO_CHECK_EXIT}" -eq 10 ]; then
+        echo $(date) ${ENV_NAME} "Initializing new backup repository" | tee -a $BACKUP_LOG_FILE
+        GOGC=20 restic init || { echo "Failed to initialize backup repository."; exit 1; }
+    else
+        echo $(date) ${ENV_NAME} "Failed to access backup repository (exit code ${REPO_CHECK_EXIT}). Check credentials, network, or repository lock." | tee -a $BACKUP_LOG_FILE
+        exit 1
     fi
 }
 

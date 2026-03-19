@@ -4,7 +4,7 @@
 var scriptName           = getParam("scriptName", "${env.envName}-wp-backup"),
     envName              = getParam("envName", "${env.envName}"),
     envAppid             = getParam("envAppid", "${env.appid}"),
-    userId               = getparam("userId", ""),
+    userId               = getParam("userId", ""),
     backupCount          = getParam("backupCount", "5"),
     backupExecNode       = getParam("backupExecNode"),
     wasabiEndpoint       = getParam("wasabiEndpoint"),
