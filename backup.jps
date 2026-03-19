@@ -108,11 +108,33 @@ settings:
               ((([\\\\*]{1}){1})|((\\\\*\\\\\\/){0,1}(([1-9]{1}){1}|(([1-2]{1}){1}([0-9\\/\\*\\-\\,]{1}){1,5}){1}|([3]{1}){1}([0-1]{1}){1})))
               ((([\\\\*]{1}){1})|((\\\\*\\\\\\/){0,1}(([1-9]{1}){1}|(([1-2]{1}){1}([0-9\\/\\*\\-\\,]{1}){1,}){1}|([3]{1}){1}([0-1]{1}){1}))|(jan|JAN|feb|FEB|mar|MAR|apr|APR|may|MAY|jun|JUN|jul|JUL|aug|AUG|sep|SEP|okt|OKT|nov|NOV|dec|DEC)(-?\\w+?)?)
               ((([\\\\*]{1}){1})|((\\\\*\\\\\\/){0,1}(([0-7]{1,}(-?[0-7]?(,[0-7]){0,6})){1}))|((sun|SUN|mon|MON|tue|TUE|wed|WED|thu|THU|fri|FRI|sat|SAT)?(,(sun|SUN|mon|MON|tue|TUE|wed|WED|thu|THU|fri|FRI|sat|SAT)){0,6})(-?\\w+?)?))$|^(@(reboot|yearly|annualy|monthly|weekly|daily|hourly))$"
-      - caption: Backup storage
-        type: list
-        tooltip: "The environment with backup storage to be used for backups creation. Presence of this environment is obligatory."  
-        name: storageName
-        dependsOn: region
+      - type: string
+        name: wasabiEndpoint
+        caption: Wasabi Endpoint
+        tooltip: "Wasabi S3-compatible endpoint (e.g., s3.wasabisys.com or s3.us-west-1.wasabisys.com)"
+        default: "s3.wasabisys.com"
+        required: true
+      - type: string
+        name: wasabiBucket
+        caption: Wasabi Bucket
+        tooltip: "Name of the Wasabi bucket for storing backups. You can use the same bucket for multiple sites - each site's backups are stored in a separate folder."
+        required: true
+      - type: string
+        name: wasabiAccessKeyId
+        caption: Access Key ID
+        tooltip: "Wasabi access key ID"
+        required: true
+      - type: string
+        name: wasabiSecretAccessKey
+        caption: Secret Access Key
+        tooltip: "Wasabi secret access key"
+        inputType: password
+        required: true
+      - type: string
+        name: resticPassword
+        caption: Restic Password
+        tooltip: "Password used to encrypt the restic repository. Keep this safe - you cannot restore backups without it!"
+        inputType: password
         required: true
       - type: spinner
         name: backupCount
@@ -121,12 +143,6 @@ settings:
         min: 1
         max: 30
         default: 5
-      - type: toggle
-        name: isAlwaysUmount
-        caption: Always umount
-        tooltip: "Always unmount backup storage when backup/restore is finished." 
-        value: false
-        hidden: false
     onBeforeInit: scripts/configOnBeforeInit.js
         
   restore:
@@ -184,7 +200,6 @@ onAfterClone:
     envName: ${event.response.env.envName}
     settings:
       scheduleType: ${settings.scheduleType}
-      storageName: ${settings.storageName}
       cronTime: ${settings.cronTime}
       backupTime: ${settings.backupTime}
       sun: ${settings.sun} 
@@ -196,7 +211,11 @@ onAfterClone:
       sat: ${settings.sat}
       tz: ${settings.tz}    
       backupCount: ${settings.backupCount}
-      isAlwaysUmount: ${settings.isAlwaysUmount}
+      wasabiEndpoint: ${settings.wasabiEndpoint}
+      wasabiBucket: ${settings.wasabiBucket}
+      wasabiAccessKeyId: ${settings.wasabiAccessKeyId}
+      wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
+      resticPassword: ${settings.resticPassword}
 
 onAfterConfirmTransfer: setSchedule
 
@@ -253,7 +272,6 @@ actions:
 
   installScript:
     - removeScript
-    - getStorageCtid
     - script: ${baseUrl}/scripts/create-backup-main-script.js?_r=${fn.random}
       params:
         scriptName: ${env.envName}-${globals.scriptSufix}
@@ -261,10 +279,12 @@ actions:
         cronTime: ${this.cronTime}
         backupCount: ${this.backupCount}
         userId: ${env.uid}
-        storageNodeId: ${response.storageCtid}
         backupExecNode: ${nodes.cp.master.id}
-        storageEnv: ${response.storageEnvShortName}
-        isAlwaysUmount: ${this.isAlwaysUmount}
+        wasabiEndpoint: ${this.wasabiEndpoint}
+        wasabiBucket: ${this.wasabiBucket}
+        wasabiAccessKeyId: ${this.wasabiAccessKeyId}
+        wasabiSecretAccessKey: ${this.wasabiSecretAccessKey}
+        resticPassword: ${this.resticPassword}
 
   callScript:
     script: |-
@@ -304,9 +324,6 @@ actions:
   configure:
     - setSchedule
         
-  getStorageCtid:
-    - script: scripts/getStorageCtid.js
-        
   convert:
     - script: |
         var resp = {result:0, onAfterReturn: {setGlobals:{cron: ""}}}, offset = java.util.TimeZone.getTimeZone("${settings.tz}").getRawOffset(),
@@ -337,44 +354,16 @@ actions:
         return resp;
 
   setSchedule:
-    - setGlobals: 
-        storageEnv: ${settings.storageName}
-        isAlwaysUmount: ${settings.isAlwaysUmount}
     - if ("${settings.scheduleType}" == 2):
       - convert
     - else:
       - setGlobals:
           cron: ${settings.cronTime}
-    - if ("${settings.isAlwaysUmount}" == "true"):
-      - removePermanentMount
-    - else:
-      - removePermanentMount
-      - addPermanentMount
     - installScript:
         cronTime: ${globals.cron}
         backupCount: ${settings.backupCount}
-        isAlwaysUmount: ${globals.isAlwaysUmount}
-
-  addPermanentMount:
-    - getStorageCtid
-    - script: |
-        return jelastic.env.file.AddMountPointById("${env.envName}", session, "${targetNodes.master.id}", "/opt/backup", "nfs4", null, "/data/", "${response.storageCtid}", "DBBackupRestore", false);
-
-  removePermanentMount:
-    - getStorageCtid
-    - script: |
-        var allMounts = jelastic.env.file.GetMountPoints("${env.envName}", session, "${targetNodes.master.id}").array;
-        for (var i = 0, n = allMounts.length; i < n; i++) {
-            if (allMounts[i].path == "/opt/backup" && allMounts[i].type == "INTERNAL") {
-              resp = jelastic.env.file.RemoveMountPointById("${env.envName}", session, "${targetNodes.master.id}", "/opt/backup");
-              if (resp.result != 0) { return resp; }
-            }
-        }
-        allMounts = jelastic.env.file.GetMountPoints("${env.envName}", session).array;
-        for (var i = 0, n = allMounts.length; i < n; i++) {
-            if (allMounts[i].path == "/opt/backup" && allMounts[i].type == "INTERNAL") {
-              resp = jelastic.env.file.RemoveMountPointByGroup("${env.envName}", session, "sqldb", "/opt/backup");
-              if (resp.result != 0) { return resp; }
-            }
-        }
-        return { "result": 0 };
+        wasabiEndpoint: ${settings.wasabiEndpoint}
+        wasabiBucket: ${settings.wasabiBucket}
+        wasabiAccessKeyId: ${settings.wasabiAccessKeyId}
+        wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
+        resticPassword: ${settings.resticPassword}

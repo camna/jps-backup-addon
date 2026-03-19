@@ -5,18 +5,20 @@ var action = getParam("action", "backup"),
 
 function run() {
     var BackupManager = use("scripts/backup-manager.js", {
-        session           : session,
-        baseUrl           : baseUrl,
-        uid               : user.uid,
-        cronTime          : "${cronTime}",
-        scriptName        : "${scriptName}",
-        envName           : "${envName}",
-        envAppid          : "${envAppid}",
-        storageNodeId     : "${storageNodeId}",
-        backupExecNode 	  : "${backupExecNode}",
-        backupCount       : "${backupCount}",
-        isAlwaysUmount    : "${isAlwaysUmount}",
-        storageEnv        : "${storageEnv}"
+        session              : session,
+        baseUrl              : baseUrl,
+        uid                  : user.uid,
+        cronTime             : "${cronTime}",
+        scriptName           : "${scriptName}",
+        envName              : "${envName}",
+        envAppid             : "${envAppid}",
+        backupExecNode       : "${backupExecNode}",
+        backupCount          : "${backupCount}",
+        wasabiEndpoint       : "${wasabiEndpoint}",
+        wasabiBucket         : "${wasabiBucket}",
+        wasabiAccessKeyId    : "${wasabiAccessKeyId}",
+        wasabiSecretAccessKey: "${wasabiSecretAccessKey}",
+        resticPassword       : "${resticPassword}"
     });
 
     api.local.ReturnResult(

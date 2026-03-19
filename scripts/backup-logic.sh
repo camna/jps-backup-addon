@@ -24,15 +24,15 @@ function sendEmailNotification(){
         CURRENT_PLATFORM_MAJOR_VERSION=$(jem api apicall -s --connect-timeout 3 --max-time 15 [API_DOMAIN]/1.0/statistic/system/rest/getversion 2>/dev/null |jq .version|grep -o [0-9.]*|awk -F . '{print $1}')
         if [ "${CURRENT_PLATFORM_MAJOR_VERSION}" -ge "7" ]; then
             echo $(date) ${ENV_NAME} "Sending e-mail notification about removing the stale lock" | tee -a $BACKUP_LOG_FILE;
-            SUBJECT="Stale lock is removed on /opt/backup/${ENV_NAME} backup repo"
-            BODY="Please pay attention to /opt/backup/${ENV_NAME} backup repo because the stale lock left from previous operation is removed during the integrity check and backup rotation. Manual check of backup repo integrity and consistency is highly desired."
+            SUBJECT="Stale lock is removed on Wasabi backup repo for ${ENV_NAME}"
+            BODY="Please pay attention to the Wasabi backup repository for ${ENV_NAME} because the stale lock left from previous operation is removed during the integrity check and backup rotation. Manual check of backup repo integrity and consistency is highly desired."
             jem api apicall -s --connect-timeout 3 --max-time 15 [API_DOMAIN]/1.0/message/email/rest/send --data-urlencode "session=$USER_SESSION" --data-urlencode "to=$USER_EMAIL" --data-urlencode "subject=$SUBJECT" --data-urlencode "body=$BODY"
             if [[ $? != 0 ]]; then
                 echo $(date) ${ENV_NAME} "Sending of e-mail notification failed" | tee -a $BACKUP_LOG_FILE;
             else
                 echo $(date) ${ENV_NAME} "E-mail notification is sent successfully" | tee -a $BACKUP_LOG_FILE;
             fi
-        elif [ -z "${CURRENT_PLATFORM_MAJOR_VERSION}" ]; then #this elif covers the case if the version is not received
+        elif [ -z "${CURRENT_PLATFORM_MAJOR_VERSION}" ]; then
             echo $(date) ${ENV_NAME} "Error when checking the platform version" | tee -a $BACKUP_LOG_FILE;
         else
             echo $(date) ${ENV_NAME} "Email notification is not sent because this functionality is unavailable for current platform version." | tee -a $BACKUP_LOG_FILE;
@@ -51,36 +51,32 @@ function update_restic(){
 }
 
 function check_backup_repo(){
-    [ -d /opt/backup/${ENV_NAME} ] || mkdir -p /opt/backup/${ENV_NAME}
-    export FILES_COUNT=$(ls -n /opt/backup/${ENV_NAME}|awk '{print $2}');
-    if [ "${FILES_COUNT}" != "0" ]; then 
-        echo $(date) ${ENV_NAME}  "Checking the backup repository integrity and consistency" | tee -a $BACKUP_LOG_FILE;
-        if [[ $(ls -A /opt/backup/${ENV_NAME}/locks) ]] ; then
-	    echo $(date) ${ENV_NAME}  "Backup repository has a slate lock, removing" | tee -a $BACKUP_LOG_FILE;
-            GOGC=20 RESTIC_PASSWORD=${ENV_NAME} restic -r /opt/backup/${ENV_NAME} unlock
-	    sendEmailNotification
-        fi
-        GOGC=20 RESTIC_PASSWORD=${ENV_NAME} restic -q -r /opt/backup/${ENV_NAME} check --read-data-subset=5% || { echo "Backup repository integrity check failed."; exit 1; }
+    echo $(date) ${ENV_NAME} "Checking backup repository at ${RESTIC_REPOSITORY}" | tee -a $BACKUP_LOG_FILE
+    
+    GOGC=20 restic snapshots 2>/dev/null
+    REPO_EXISTS=$?
+    
+    if [ "${REPO_EXISTS}" != "0" ]; then
+        echo $(date) ${ENV_NAME} "Initializing new backup repository" | tee -a $BACKUP_LOG_FILE
+        GOGC=20 restic init || { echo "Failed to initialize backup repository."; exit 1; }
     else
-        GOGC=20 RESTIC_PASSWORD=${ENV_NAME} restic init -r /opt/backup/${ENV_NAME}
+        echo $(date) ${ENV_NAME} "Checking the backup repository integrity and consistency" | tee -a $BACKUP_LOG_FILE;
+        GOGC=20 restic unlock 2>/dev/null
+        GOGC=20 restic -q check --read-data-subset=5% || { echo "Backup repository integrity check failed."; exit 1; }
     fi
 }
 
 function rotate_snapshots(){
     echo $(date) ${ENV_NAME} "Rotating snapshots by keeping the last ${BACKUP_COUNT}" | tee -a ${BACKUP_LOG_FILE}
-    if [[ $(ls -A /opt/backup/${ENV_NAME}/locks) ]] ; then
-        echo $(date) ${ENV_NAME}  "Backup repository has a slate lock, removing" | tee -a $BACKUP_LOG_FILE;
-        GOGC=20 RESTIC_PASSWORD=${ENV_NAME} restic -r /opt/backup/${ENV_NAME} unlock
-	sendEmailNotification
-    fi
-    { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_PASSWORD=${ENV_NAME} restic forget -q -r /opt/backup/${ENV_NAME} --keep-last ${BACKUP_COUNT} --prune | tee -a $BACKUP_LOG_FILE; } || { echo "Backup rotation failed."; exit 1; }
+    GOGC=20 restic unlock 2>/dev/null
+    { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 restic forget -q --keep-last ${BACKUP_COUNT} --prune | tee -a $BACKUP_LOG_FILE; } || { echo "Backup rotation failed."; exit 1; }
 }
 
 function create_snapshot(){
     DUMP_NAME=$(date "+%F_%H%M%S_%Z")
-    echo $(date) ${ENV_NAME} "Begin uploading the ${DUMP_NAME} snapshot to backup storage" | tee -a ${BACKUP_LOG_FILE}  
-    { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_READ_CONCURRENCY=8 RESTIC_PASSWORD=${ENV_NAME} restic backup -q -r /opt/backup/${ENV_NAME} --tag "${DUMP_NAME} ${BACKUP_ADDON_COMMIT_ID} ${BACKUP_TYPE}" ${APP_PATH} ~/wp_db_backup.sql | tee -a $BACKUP_LOG_FILE; } || { echo "Backup snapshot creation failed."; exit 1; }
-    echo $(date) ${ENV_NAME} "End uploading the ${DUMP_NAME} snapshot to backup storage" | tee -a ${BACKUP_LOG_FILE}
+    echo $(date) ${ENV_NAME} "Begin uploading the ${DUMP_NAME} snapshot to Wasabi" | tee -a ${BACKUP_LOG_FILE}  
+    { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_READ_CONCURRENCY=8 restic backup -q --tag "${DUMP_NAME}" --tag "${BACKUP_ADDON_COMMIT_ID}" --tag "${BACKUP_TYPE}" ${APP_PATH} ~/wp_db_backup.sql | tee -a $BACKUP_LOG_FILE; } || { echo "Backup snapshot creation failed."; exit 1; }
+    echo $(date) ${ENV_NAME} "End uploading the ${DUMP_NAME} snapshot to Wasabi" | tee -a ${BACKUP_LOG_FILE}
 }
 
 function backup(){
@@ -88,7 +84,7 @@ function backup(){
     BACKUP_ADDON_REPO=$(echo ${BASE_URL}|sed 's|https:\/\/raw.githubusercontent.com\/||'|awk -F / '{print $1"/"$2}')
     BACKUP_ADDON_BRANCH=$(echo ${BASE_URL}|sed 's|https:\/\/raw.githubusercontent.com\/||'|awk -F / '{print $3}')
     BACKUP_ADDON_COMMIT_ID=$(git ls-remote https://github.com/${BACKUP_ADDON_REPO}.git | grep "/${BACKUP_ADDON_BRANCH}$" | awk '{print $1}')
-    echo $(date) ${ENV_NAME} "Creating the ${BACKUP_TYPE} backup (using the backup addon with commit id ${BACKUP_ADDON_COMMIT_ID}) on storage node ${NODE_ID}" | tee -a ${BACKUP_LOG_FILE}
+    echo $(date) ${ENV_NAME} "Creating the ${BACKUP_TYPE} backup (using the backup addon with commit id ${BACKUP_ADDON_COMMIT_ID}) to Wasabi" | tee -a ${BACKUP_LOG_FILE}
     for i in DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat /var/www/webroot/ROOT/wp-config.php|grep ${i}|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1); done
     DB_HOST=$(cat /var/www/webroot/ROOT/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $1}');
     DB_PORT=$(cat /var/www/webroot/ROOT/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $2}');
@@ -122,13 +118,13 @@ case "$1" in
         $1
         ;;
     create_snapshot)
-	$1
+        $1
         ;;
     update_restic)
-	$1
+        $1
         ;;
     *)
-        echo "Usage: $0 {backup|check_backup_repo|rotate_snapshots|create_snapshot}"
+        echo "Usage: $0 {backup|check_backup_repo|rotate_snapshots|create_snapshot|update_restic}"
         exit 2
 esac
 
