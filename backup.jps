@@ -309,11 +309,25 @@ actions:
     - deleteDBdump
     
   restore:
+    - if ("${settings.backupBeforeRestore}" == "true"):
+        - callScript: backup
+        - deleteDBdump
     - cmd[cp]: |-
-        echo "${settings.backupedEnvName}" > /root/.backupedenv
+        echo "${settings.restoreEnvName}" > /root/.backupedenv
         echo "${settings.backupDir}" > /root/.backupid
       user: root
-    - callScript: restore
+    - script: |-
+        var params = {
+            action: "restore",
+            restoreEnvName: "${settings.restoreEnvName}",
+            restoreWasabiEndpoint: "${settings.restoreWasabiEndpoint}",
+            restoreWasabiBucket: "${settings.restoreWasabiBucket}",
+            restoreWasabiAccessKeyId: "${settings.restoreWasabiAccessKeyId}",
+            restoreWasabiSecretAccessKey: "${settings.restoreWasabiSecretAccessKey}",
+            restoreResticPassword: "${settings.restoreResticPassword}"
+        };
+        var resp = api.dev.scripting.Eval(appid, session, '${env.envName}-${globals.scriptSufix}', params);
+        return resp.response || resp;
     - deleteDBdump
 
   deleteDBdump:

@@ -109,12 +109,12 @@ function BackupManager(config) {
                   .replace(/`/g, '\\`');
     };
 
-    me.getResticEnvVars = function() {
+    me.getResticEnvVars = function(overrideEnvName) {
         var safeAccessKey = me.escapeForShell(config.wasabiAccessKeyId);
         var safeSecretKey = me.escapeForShell(config.wasabiSecretAccessKey);
         var safeEndpoint = me.escapeForShell(config.wasabiEndpoint);
         var safeBucket = me.escapeForShell(config.wasabiBucket);
-        var safeEnvName = me.escapeForShell(config.envName);
+        var safeEnvName = me.escapeForShell(overrideEnvName || config.envName);
         var safePassword = me.escapeForShell(config.resticPassword);
         
         return 'export AWS_ACCESS_KEY_ID="' + safeAccessKey + '" && ' +
@@ -179,6 +179,8 @@ function BackupManager(config) {
     };
 
     me.restore = function () {
+        var sourceEnvName = config.restoreSourceEnvName || config.envName;
+
         var restoreParams = {
             nodeId: config.backupExecNode,
             envName: config.envName,
@@ -198,7 +200,7 @@ function BackupManager(config) {
                 'trap "jem service start; rm -f /root/.backupid /root/wp_db_backup.sql" EXIT',
                 'BACKUPID=$(cat /root/.backupid)',
                 'echo $(date) %(envName) Restoring the snapshot ${BACKUPID}',
-                me.getResticEnvVars(),
+                me.getResticEnvVars(sourceEnvName),
                 'jem service stop',
                 'SNAPSHOT_ID=$(restic snapshots --json | jq -r --arg id "${BACKUPID}" \'.[] | select(.tags[] | contains($id)) | .short_id\' | head -1)',
                 '[ -n "${SNAPSHOT_ID}" ] || { echo "Snapshot not found"; exit 1; }',
