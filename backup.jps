@@ -327,11 +327,7 @@ actions:
             restoreResticPassword: "${settings.restoreResticPassword}"
         };
         var resp = api.dev.scripting.Eval(appid, session, '${env.envName}-${globals.scriptSufix}', params);
-        if (resp.result === 1702) {
-            return { result: 0, out: "script not found" };
-        } else {
-            return resp.response || resp;
-        }
+        return resp.response || resp;
     - deleteDBdump
 
   deleteDBdump:
