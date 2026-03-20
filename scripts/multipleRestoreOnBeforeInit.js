@@ -87,67 +87,19 @@ function prepareBackups(snapshots) {
     return aResultValues;
 }
 
+var restoreFields = jps.settings.restore.fields;
+
 if (error_markup === "") {
-    settings.fields.push({
-        "caption": "Backup",
-        "type": "list",
-        "tooltip": "Select the time stamp for which you want to restore the contents of the web site",
-        "name": "backupDir",
-        "required": true,
-        "values": backupListPrepared
-    }, {
-        "type": "checkbox",
-        "name": "backupBeforeRestore",
-        "caption": "Backup before restore",
-        "value": false
-    }, {
-        "type": "displayfield",
-        "hideLabel": true,
-        "markup": "<hr style='margin:5px 0'><b>Restore Source Configuration</b><br><small>These settings determine which backup repository to restore from. Modify to restore from a different environment.</small>"
-    }, {
-        "type": "string",
-        "name": "restoreEnvName",
-        "caption": "Environment Name",
-        "tooltip": "Environment name used as the folder path in the backup repository. Change to restore from a different environment's backups.",
-        "default": "${env.envName}",
-        "required": true
-    }, {
-        "type": "string",
-        "name": "restoreWasabiEndpoint",
-        "caption": "Wasabi Endpoint",
-        "tooltip": "S3-compatible endpoint for restore",
-        "default": "${settings.wasabiEndpoint}",
-        "required": true
-    }, {
-        "type": "string",
-        "name": "restoreWasabiBucket",
-        "caption": "Wasabi Bucket",
-        "tooltip": "Bucket name for restore",
-        "default": "${settings.wasabiBucket}",
-        "required": true
-    }, {
-        "type": "string",
-        "name": "restoreWasabiAccessKeyId",
-        "caption": "Access Key ID",
-        "tooltip": "Wasabi access key ID for restore",
-        "default": "${settings.wasabiAccessKeyId}",
-        "required": true
-    }, {
-        "type": "string",
-        "name": "restoreWasabiSecretAccessKey",
-        "caption": "Secret Access Key",
-        "tooltip": "Leave blank to use the configured backup secret key. Fill in only to override for this restore.",
-        "inputType": "password",
-        "required": false
-    }, {
-        "type": "string",
-        "name": "restoreResticPassword",
-        "caption": "Restic Password",
-        "tooltip": "Leave blank to use the configured backup restic password. Fill in only to override for this restore.",
-        "inputType": "password",
-        "required": false
-    });
+    restoreFields[0].values = backupListPrepared;
+
+    restoreFields[3].default = '${env.envName}';
+    restoreFields[4].default = '${settings.wasabiEndpoint}';
+    restoreFields[5].default = '${settings.wasabiBucket}';
+    restoreFields[6].default = '${settings.wasabiAccessKeyId}';
 } else {
+    for (var i = 0; i < restoreFields.length; i++) {
+        restoreFields[i].hidden = true;
+    }
     settings.fields.push(
         {"type": "displayfield", "cls": "warning", "height": 30, "hideLabel": true, "markup": error_markup}
     );
