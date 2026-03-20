@@ -127,15 +127,15 @@ settings:
       - type: string
         name: wasabiSecretAccessKey
         caption: Secret Access Key
-        tooltip: "Wasabi secret access key"
+        tooltip: "Leave blank to keep the current value. Only fill in to set a new secret access key."
         inputType: password
-        required: true
+        required: false
       - type: string
         name: resticPassword
         caption: Restic Password
-        tooltip: "Password used to encrypt the restic repository. Keep this safe - you cannot restore backups without it!"
+        tooltip: "Leave blank to keep the current value. Only fill in to set a new restic password."
         inputType: password
-        required: true
+        required: false
       - type: spinner
         name: backupCount
         caption: Number of backups
@@ -179,6 +179,9 @@ onInstall:
   - checkApplication
   - checkAddons
   - installRestic
+  - setGlobals:
+      wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
+      resticPassword: ${settings.resticPassword}
   - setSchedule
 
 onUninstall:
@@ -216,7 +219,11 @@ onAfterClone:
       wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
       resticPassword: ${settings.resticPassword}
 
-onAfterConfirmTransfer: setSchedule
+onAfterConfirmTransfer:
+  - setGlobals:
+      wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
+      resticPassword: ${settings.resticPassword}
+  - setSchedule
 
 actions:
   checkApplication:
@@ -335,8 +342,33 @@ actions:
       user: root    
   
   configure:
+    - resolveSecrets
     - setSchedule
         
+  resolveSecrets:
+    - script: |
+        var newSecretKey = '${settings.wasabiSecretAccessKey}';
+        var newResticPw = '${settings.resticPassword}';
+        var result = { wasabiSecretAccessKey: newSecretKey, resticPassword: newResticPw };
+
+        if (!newSecretKey || !newResticPw) {
+            var scriptName = '${env.envName}-${globals.scriptSufix}';
+            var resp = api.dev.scripting.GetScript(appid, session, scriptName);
+            if (resp.result === 0) {
+                var code = resp.script.code;
+                if (!newSecretKey) {
+                    var m = code.match(/wasabiSecretAccessKey\s*:\s*"((?:[^"\\]|\\[\s\S])*)"/);
+                    if (m) result.wasabiSecretAccessKey = m[1].replace(/\\(.)/g, '$1');
+                }
+                if (!newResticPw) {
+                    var m = code.match(/resticPassword\s*:\s*"((?:[^"\\]|\\[\s\S])*)"/);
+                    if (m) result.resticPassword = m[1].replace(/\\(.)/g, '$1');
+                }
+            }
+        }
+
+        return { result: 0, onAfterReturn: { setGlobals: result } };
+
   convert:
     - script: |
         var resp = {result:0, onAfterReturn: {setGlobals:{cron: ""}}}, offset = java.util.TimeZone.getTimeZone("${settings.tz}").getRawOffset(),
@@ -378,5 +410,5 @@ actions:
         wasabiEndpoint: ${settings.wasabiEndpoint}
         wasabiBucket: ${settings.wasabiBucket}
         wasabiAccessKeyId: ${settings.wasabiAccessKeyId}
-        wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
-        resticPassword: ${settings.resticPassword}
+        wasabiSecretAccessKey: ${globals.wasabiSecretAccessKey}
+        resticPassword: ${globals.resticPassword}
