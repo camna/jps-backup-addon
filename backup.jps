@@ -178,6 +178,14 @@ globals:
 onInstall:
   - checkApplication
   - checkAddons
+  - if ("${settings.wasabiSecretAccessKey}" == ""):
+    - stopEvent:
+        type: warning
+        message: Secret Access Key is required for installation.
+  - if ("${settings.resticPassword}" == ""):
+    - stopEvent:
+        type: warning
+        message: Restic Password is required for installation.
   - installRestic
   - setGlobals:
       wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
