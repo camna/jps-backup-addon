@@ -9,11 +9,13 @@ function BackupManager(config) {
      *  scriptName : {String}
      *  envName : {String}
      *  envAppid : {String}
-     *  storageNodeId : {String}
-     *  isAlwaysUmount : {Boolean}
      *  backupExecNode : {String}
-     *  [storageEnv] : {String}
-     *  [backupCount] : {String}
+     *  backupCount : {String}
+     *  wasabiEndpoint : {String}
+     *  wasabiBucket : {String}
+     *  wasabiAccessKeyId : {String}
+     *  wasabiSecretAccessKey : {String}
+     *  resticPassword : {String}
      * }} config
      * @constructor
      */
@@ -42,7 +44,8 @@ function BackupManager(config) {
             "install": me.install,
             "uninstall": me.uninstall,
             "backup": me.backup,
-            "restore": me.restore
+            "restore": me.restore,
+            "listSnapshots": me.listSnapshots
         };
 
         if (!actions[action]) {
@@ -59,14 +62,13 @@ function BackupManager(config) {
         var resp;
 
         return me.exec([
-            [me.cmd, ['echo $(date) %(envName) "Creating the backup task for %(envName) with the backup count %(backupCount), backup schedule %(cronTime) and backup storage env %(storageEnv)" | tee -a %(backupLogFile)'],
+            [me.cmd, ['echo $(date) %(envName) "Creating the backup task for %(envName) with the backup count %(backupCount), backup schedule %(cronTime) and Wasabi bucket %(wasabiBucket)" | tee -a %(backupLogFile)'],
             {
                 nodeId: config.backupExecNode,
                 envName: config.envName,
                 cronTime: config.cronTime,
-                storageEnv: config.storageEnv,
+                wasabiBucket: config.wasabiBucket,
                 backupCount: config.backupCount,
-		isAlwaysUmount : config.isAlwaysUmount,
                 backupLogFile: "/var/log/backup_addon.log"
             }],
             [me.createScript],
@@ -99,21 +101,28 @@ function BackupManager(config) {
         }
     }
 
-    me.getStorageNodeId = function () {
-        let storageEnv = config.storageEnv
-        let resp = api.environment.control.GetEnvInfo({ envName: storageEnv.split(".")[0] })
-        if (resp.result != 0) return resp
-    
-        let storageNode = resp.nodes.filter(node => (node.nodeGroup == 'storage' && node.ismaster))[0];
-        if (!storageNode) return { result: Response.OBJECT_NOT_EXIST, error: "storage node not found" };
-    
-        return { result: 0, storageCtid : storageNode.id };
-    }
-
-    me.initBoolValue = function initBoolValue(value) {
-        return typeof value == "boolean" ? value : String(value) != "false";
+    me.escapeForShell = function (str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/\\/g, '\\\\')
+                  .replace(/"/g, '\\"')
+                  .replace(/\$/g, '\\$')
+                  .replace(/`/g, '\\`');
     };
-	
+
+    me.getResticEnvVars = function() {
+        var safeAccessKey = me.escapeForShell(config.wasabiAccessKeyId);
+        var safeSecretKey = me.escapeForShell(config.wasabiSecretAccessKey);
+        var safeEndpoint = me.escapeForShell(config.wasabiEndpoint);
+        var safeBucket = me.escapeForShell(config.wasabiBucket);
+        var safeEnvName = me.escapeForShell(config.envName);
+        var safePassword = me.escapeForShell(config.resticPassword);
+        
+        return 'export AWS_ACCESS_KEY_ID="' + safeAccessKey + '" && ' +
+               'export AWS_SECRET_ACCESS_KEY="' + safeSecretKey + '" && ' +
+               'export RESTIC_REPOSITORY="s3:' + safeEndpoint + '/' + safeBucket + '/' + safeEnvName + '" && ' +
+               'export RESTIC_PASSWORD="' + safePassword + '"';
+    };
+
     me.backup = function () {
         var backupType, isManual = !getParam("task");
 
@@ -123,168 +132,105 @@ function BackupManager(config) {
             backupType = "auto";
         }
 
-	var backupCallParams = {
-                nodeId : config.backupExecNode,
-                envName : config.envName,
-                appPath: "/var/www/webroot/ROOT",
-                backupCount : config.backupCount,
-                backupLogFile : "/var/log/backup_addon.log",
-                baseUrl : config.baseUrl,
-                backupType : backupType,
-		isAlwaysUmount : config.isAlwaysUmount,
-		session : session,
-		email : user.email
-        }
+        var backupCallParams = {
+            nodeId: config.backupExecNode,
+            envName: config.envName,
+            appPath: "/var/www/webroot/ROOT",
+            backupCount: config.backupCount,
+            backupLogFile: "/var/log/backup_addon.log",
+            baseUrl: config.baseUrl,
+            backupType: backupType,
+            wasabiEndpoint: config.wasabiEndpoint,
+            wasabiBucket: config.wasabiBucket,
+            wasabiAccessKeyId: config.wasabiAccessKeyId,
+            wasabiSecretAccessKey: config.wasabiSecretAccessKey,
+            resticPassword: config.resticPassword,
+            session: session,
+            email: user.email
+        };
 
         return me.exec([
             [me.checkEnvStatus],
-            [me.checkStorageEnvStatus],
             [me.checkCurrentlyRunningBackup],
-            [me.removeMount, config.isAlwaysUmount],
-            [me.addMountForBackup, config.isAlwaysUmount],
             [me.cmd, [
-		'[ -f /root/%(envName)_backup-logic.sh ] && rm -f /root/%(envName)_backup-logic.sh || true',
+                '[ -f /root/%(envName)_backup-logic.sh ] && rm -f /root/%(envName)_backup-logic.sh || true',
                 'wget -O /root/%(envName)_backup-logic.sh %(baseUrl)/scripts/backup-logic.sh'
             ], {
-		nodeId: config.backupExecNode,
-                envName : config.envName,
-		baseUrl : config.baseUrl
-	        }],
-            [me.cmd, [
-                'bash /root/%(envName)_backup-logic.sh update_restic'
-            ], {
                 nodeId: config.backupExecNode,
-                envName: config.envName
-            } ],
+                envName: config.envName,
+                baseUrl: config.baseUrl
+            }],
             [me.cmd, [
-                'bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath) %(session) %(email)'
-            ], backupCallParams ],
-	    [me.cmd, [
-                'bash /root/%(envName)_backup-logic.sh backup %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
-            ], backupCallParams ],
-	    [me.cmd, [
-                'bash /root/%(envName)_backup-logic.sh create_snapshot %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
-            ], backupCallParams ],
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+            ], backupCallParams],
             [me.cmd, [
-                'bash /root/%(envName)_backup-logic.sh rotate_snapshots %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath) %(session) %(email)'
-            ], backupCallParams ],
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh backup %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+            ], backupCallParams],
             [me.cmd, [
-                'bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath) %(session) %(email)'
-            ], backupCallParams ],
-            [me.removeMount, config.isAlwaysUmount]
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh create_snapshot %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+            ], backupCallParams],
+            [me.cmd, [
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh rotate_snapshots %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+            ], backupCallParams],
+            [me.cmd, [
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+            ], backupCallParams]
         ]);
     };
 
     me.restore = function () {
+        var restoreParams = {
+            nodeId: config.backupExecNode,
+            envName: config.envName,
+            baseUrl: config.baseUrl,
+            appPath: "/var/www/webroot/ROOT",
+            wasabiEndpoint: config.wasabiEndpoint,
+            wasabiBucket: config.wasabiBucket,
+            wasabiAccessKeyId: config.wasabiAccessKeyId,
+            wasabiSecretAccessKey: config.wasabiSecretAccessKey,
+            resticPassword: config.resticPassword
+        };
+
         return me.exec([
             [me.checkEnvStatus],
-            [me.checkStorageEnvStatus],
             [me.checkCurrentlyRunningBackup],
-            [me.removeMount, config.isAlwaysUmount],
-            [me.addMountForRestore, config.isAlwaysUmount],
-            [me.cmd, ['echo $(date) %(envName) Restoring the snapshot $(cat /root/.backupid)', 'restic self-update 2>&1', 'if [ -e /root/.backupedenv ]; then REPO_DIR=$(cat /root/.backupedenv); else REPO_DIR="%(envName)"; fi', 'jem service stop', 'SNAPSHOT_ID=$(RESTIC_PASSWORD=$REPO_DIR restic -r /opt/backup/$REPO_DIR snapshots|grep $(cat /root/.backupid)|awk \'{print $1}\')', '[ -n "${SNAPSHOT_ID}" ] || false', 'RESTIC_PASSWORD=$REPO_DIR GOGC=20 restic -r /opt/backup/$REPO_DIR restore ${SNAPSHOT_ID} --target /'],
-            {
-                nodeId: config.backupExecNode,
-                envName: config.envName
-            }],
             [me.cmd, [
-                'echo $(date) %(envName) Restoring the database from snapshot $(cat /root/.backupid)', 
-                '! which mysqld || service mysql start 2>&1', 
-                'for i in DB_HOST DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat %(appPath)/wp-config.php | grep ${i} |grep -v \'^[[:space:]]*#\' | tr -d \'[[:blank:]]\' | awk -F \',\' \'{print $2}\' | tr -d "\\"\');"|tr -d \'\\r\'|tail -n 1); done', 
-                'source /etc/jelastic/metainf.conf ; if [ "${COMPUTE_TYPE}" == "lemp" -o "${COMPUTE_TYPE}" == "llsmp" ]; then wget -O /root/addAppDbUser.sh %(baseUrl)/scripts/addAppDbUser.sh; chmod +x /root/addAppDbUser.sh; bash /root/addAppDbUser.sh ${DB_USER} ${DB_PASSWORD} ${DB_HOST}; fi', 
-                'mysql -u${DB_USER} -p${DB_PASSWORD} -h ${DB_HOST} --execute="CREATE DATABASE IF NOT EXISTS ${DB_NAME};"', 'mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_PASSWORD} ${DB_NAME} --force < /root/wp_db_backup.sql'
+                'trap "jem service start; rm -f /root/.backupid /root/wp_db_backup.sql" EXIT',
+                'BACKUPID=$(cat /root/.backupid)',
+                'echo $(date) %(envName) Restoring the snapshot ${BACKUPID}',
+                me.getResticEnvVars(),
+                'jem service stop',
+                'SNAPSHOT_ID=$(restic snapshots --json | jq -r --arg id "${BACKUPID}" \'.[] | select(.tags[] | contains($id)) | .short_id\' | head -1)',
+                '[ -n "${SNAPSHOT_ID}" ] || { echo "Snapshot not found"; exit 1; }',
+                'GOGC=20 restic restore ${SNAPSHOT_ID} --target /',
+                'echo $(date) %(envName) Restoring the database from snapshot ${BACKUPID}',
+                '! which mysqld || service mysql start 2>&1',
+                'for i in DB_HOST DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat %(appPath)/wp-config.php | grep ${i} |grep -v \'^[[:space:]]*#\' | tr -d \'[[:blank:]]\' | awk -F \',\' \'{print $2}\' | tr -d "\\"\');"|tr -d \'\\r\'|tail -n 1); done',
+                'source /etc/jelastic/metainf.conf ; if [ "${COMPUTE_TYPE}" == "lemp" -o "${COMPUTE_TYPE}" == "llsmp" ]; then wget -O /root/addAppDbUser.sh %(baseUrl)/scripts/addAppDbUser.sh; chmod +x /root/addAppDbUser.sh; bash /root/addAppDbUser.sh ${DB_USER} ${DB_PASSWORD} ${DB_HOST}; fi',
+                'mysql -u${DB_USER} -p${DB_PASSWORD} -h ${DB_HOST} --execute="CREATE DATABASE IF NOT EXISTS ${DB_NAME};"',
+                'mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_PASSWORD} ${DB_NAME} --force < /root/wp_db_backup.sql'
             ],
-            {
-                nodeId: config.backupExecNode,
-                envName: config.envName,
-                baseUrl: config.baseUrl,
-                appPath: "/var/www/webroot/ROOT"
-            }],
-            [me.cmd, ['rm -f /root/.backupid /root/wp_db_backup.sql', 'jem service start'],
-            {
-                nodeId: config.backupExecNode,
-                envName: config.envName
-            }],
-            [me.removeMount, config.isAlwaysUmount]
+            restoreParams]
         ]);
-    }
+    };
 
-    me.addMountForBackup = function addMountForBackup(isAlwaysUmount) {
-	var resp = me.getStorageNodeId();
-	if (resp.result != 0) {
-            throw new Error("can't get backup storage node id: " + toJSON(resp));
-        }
-	var currentStorageNodeId = resp.storageCtid;
-        var delay = (Math.floor(Math.random() * 50) * 1000);
-	    java.lang.Thread.sleep(delay);
+    me.listSnapshots = function () {
+        var listParams = {
+            nodeId: config.backupExecNode,
+            envName: config.envName,
+            wasabiEndpoint: config.wasabiEndpoint,
+            wasabiBucket: config.wasabiBucket,
+            wasabiAccessKeyId: config.wasabiAccessKeyId,
+            wasabiSecretAccessKey: config.wasabiSecretAccessKey,
+            resticPassword: config.resticPassword
+        };
 
-	isAlwaysUmount = String(isAlwaysUmount) || false;
-        isAlwaysUmount = me.initBoolValue(isAlwaysUmount)
-        if (isAlwaysUmount) {    
-            resp = api.env.file.AddMountPointById(config.envName, session, config.backupExecNode, "/opt/backup", 'nfs4', null, '/data/', currentStorageNodeId, 'WPBackupRestore', false);
-            if (resp.result != 0) {
-	        if (resp.result != 2031) {
-                    var title = "Backup storage " + config.storageEnv + " is unreacheable",
-                        text = "Backup storage environment " + config.storageEnv + " is not accessible for storing backups from " + config.envName + ". The error message is " + resp.error;
-                    try {
-                        api.message.email.Send(appid, signature, null, user.email, user.email, title, text);
-                    } catch (ex) {
-                        emailResp = error(Response.ERROR_UNKNOWN, toJSON(ex));
-                    }
-	        }
-            }
-	    return resp;
-        }
-	return { result : 0 };
-    }
-
-    me.addMountForRestore = function addMountForRestore(isAlwaysUmount) {
-	var resp = me.getStorageNodeId();
-	if (resp.result != 0) {
-            throw new Error("can't get backup storage node id: " + toJSON(resp));
-        }
-	var currentStorageNodeId = resp.storageCtid;
-	isAlwaysUmount = String(isAlwaysUmount) || false;
-        isAlwaysUmount = me.initBoolValue(isAlwaysUmount)
-        if (isAlwaysUmount) {    
-            resp = api.env.file.AddMountPointByGroup(config.envName, session, "cp", "/opt/backup", 'nfs4', null, '/data/', config.storageNodeId, 'WPBackupRestore', false);
-            if (resp.result != 0) {
-	        if (resp.result != 2031) {
-                    var title = "Backup storage " + config.storageEnv + " is unreacheable",
-                        text = "Backup storage environment " + config.storageEnv + " is not accessible for storing backups from " + config.envName + ". The error message is " + resp.error;
-                    try {
-                        api.message.email.Send(appid, signature, null, user.email, user.email, title, text);
-                    } catch (ex) {
-                        emailResp = error(Response.ERROR_UNKNOWN, toJSON(ex));
-                    }
-	        }
-            }
-            return resp;
-	}
-	return { result : 0 };
-    }
-
-    me.removeMount = function removeMount(isAlwaysUmount) {
-        resp = api.env.control.GetEnvInfo(config.envName, session);
-        if (resp.result != 0) {
-            return resp;
-        }
-	var cpNodes = resp.nodes;
-	isAlwaysUmount = String(isAlwaysUmount) || false;
-        isAlwaysUmount = me.initBoolValue(isAlwaysUmount)
-	if (isAlwaysUmount) {
-            for (var currentNode = 0, cpNodesCount = cpNodes.length; currentNode < cpNodesCount; currentNode++) {
-                var allMounts = api.env.file.GetMountPoints(config.envName, session, cpNodes[currentNode].id).array;
-                for (var i = 0, n = allMounts.length; i < n; i++) {
-                    if (allMounts[i].sourcePath == "/data" && allMounts[i].path == "/opt/backup" && allMounts[i].name == "WPBackupRestore" && allMounts[i].type == "INTERNAL") {
-                        resp = api.env.file.RemoveMountPointById(config.envName, session, cpNodes[currentNode].id, "/opt/backup");
-                        if (resp.result != 0) { return resp; }
-                    }
-                }
-            }
-	}
-	return { result: 0 }
-    }
+        return me.exec([
+            [me.cmd, [
+                me.getResticEnvVars() + ' && restic snapshots --json'
+            ], listParams]
+        ]);
+    };
 
     me.checkEnvStatus = function checkEnvStatus() {
         if (!nodeManager.isEnvRunning()) {
@@ -301,31 +247,9 @@ function BackupManager(config) {
         };
     };
 
-    me.checkStorageEnvStatus = function checkStorageEnvStatus() {
-        if (typeof config.storageEnv !== 'undefined') {
-            var resp = api.env.control.GetEnvInfo(config.storageEnv, session);
-            if (resp.result === 11) {
-                return {
-                    result: EnvironmentResponse.ENVIRONMENT_NOT_EXIST,
-                    error: _("Storage env [%(name)] is deleted", {
-                        name: config.storageEnv
-                    })
-                };
-            } else if (resp.env.status === 2) {
-                return {
-                    result: EnvironmentResponse.ENVIRONMENT_NOT_RUNNING,
-                    error: _("Storage env [%(name)] not running", {
-                        name: config.storageEnv
-                    })
-                };
-            }
-            return {
-                result: 0
-            };
-        };
-        return {
-            result: 0
-        };
+    me.escapeForJs = function (str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     };
 
     me.createScript = function createScript() {
@@ -336,17 +260,26 @@ function BackupManager(config) {
         try {
             scriptBody = new Transport().get(url);
 
-            scriptBody = me.replaceText(scriptBody, config);
+            var safeConfig = {};
+            for (var key in config) {
+                if (config.hasOwnProperty(key)) {
+                    safeConfig[key] = config[key];
+                }
+            }
+            safeConfig.wasabiEndpoint = me.escapeForJs(config.wasabiEndpoint);
+            safeConfig.wasabiBucket = me.escapeForJs(config.wasabiBucket);
+            safeConfig.wasabiAccessKeyId = me.escapeForJs(config.wasabiAccessKeyId);
+            safeConfig.wasabiSecretAccessKey = me.escapeForJs(config.wasabiSecretAccessKey);
+            safeConfig.resticPassword = me.escapeForJs(config.resticPassword);
 
-            //delete the script if it already exists
+            scriptBody = me.replaceText(scriptBody, safeConfig);
+
             api.dev.scripting.DeleteScript(scriptName);
 
-            //create a new script
             resp = api.dev.scripting.CreateScript(scriptName, "js", scriptBody);
 
             java.lang.Thread.sleep(1000);
 
-            //build script to avoid caching
             api.dev.scripting.Build(scriptName);
         } catch (ex) {
             resp = {
@@ -465,10 +398,10 @@ function BackupManager(config) {
         return new(new Function("return " + body)())(session);
     }
 
-    function NodeManager(envName, storageEnv, nodeId, baseDir, logPath) {
+    function NodeManager(envName) {
         var ENV_STATUS_TYPE_RUNNING = 1,
             me = this,
-            storageEnvInfo, envInfo;
+            envInfo;
 
         me.isEnvRunning = function () {
             var resp = me.getEnvInfo();
@@ -493,20 +426,10 @@ function BackupManager(config) {
             return envInfo;
         };
 
-        me.getStorageEnvInfo = function () {
-            var resp;
-            if (!storageEnvInfo) {
-                resp = api.env.control.GetEnvInfo(config.storageEnv, session);
-                storageEnvInfo = resp;
-            }
-            return storageEnvInfo;
-        };
-
         me.cmd = function (cmd, values, sep, disableLogging) {
             var resp, command;
 
             values = values || {};
-            values.log = values.log || logPath;
             cmd = cmd.join ? cmd.join(sep || " && ") : cmd;
 
             command = _(cmd, values);
@@ -525,13 +448,30 @@ function BackupManager(config) {
                 }]), true, "root");
             }
 
+            var cmdFailed = false;
+            var errorMsg = "";
+
             if (resp.result != 0) {
+                cmdFailed = true;
+                errorMsg = resp.error || "API error";
+            } else if (resp.responses && resp.responses[0]) {
+                var cmdResp = resp.responses[0];
+                var exitCode = cmdResp.exitCode;
+                if (exitCode && exitCode != 0) {
+                    cmdFailed = true;
+                    errorMsg = "Exit code " + exitCode + ": " + (cmdResp.errOut || cmdResp.out || "").substring(0, 500);
+                    resp.result = Response.ERROR_UNKNOWN;
+                    resp.error = errorMsg;
+                }
+            }
+
+            if (cmdFailed) {
                 var title = "Backup failed for " + config.envName,
-                    text = "Backup failed for the environment " + config.envName + " of " + user.email + " with error message " + resp.responses[0].errOut;
+                    text = "Backup failed for the environment " + config.envName + " of " + user.email + " with error: " + errorMsg;
                 try {
                     api.message.email.Send(appid, signature, null, user.email, user.email, title, text);
                 } catch (ex) {
-                    emailResp = error(Response.ERROR_UNKNOWN, toJSON(ex));
+                    log("Failed to send error email: " + toJSON(ex));
                 }
             }
             return resp;
