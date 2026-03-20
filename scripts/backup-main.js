@@ -4,7 +4,7 @@ var action = getParam("action", "backup"),
     baseUrl = "${baseUrl}";
 
 function run() {
-    var BackupManager = use("scripts/backup-manager.js", {
+    var config = {
         session              : session,
         baseUrl              : baseUrl,
         uid                  : user.uid,
@@ -19,7 +19,25 @@ function run() {
         wasabiAccessKeyId    : "${wasabiAccessKeyId}",
         wasabiSecretAccessKey: "${wasabiSecretAccessKey}",
         resticPassword       : "${resticPassword}"
-    });
+    };
+
+    if (action === "restore") {
+        var p;
+        p = getParam("restoreEnvName", "");
+        if (p) config.restoreSourceEnvName = p;
+        p = getParam("restoreWasabiEndpoint", "");
+        if (p) config.wasabiEndpoint = p;
+        p = getParam("restoreWasabiBucket", "");
+        if (p) config.wasabiBucket = p;
+        p = getParam("restoreWasabiAccessKeyId", "");
+        if (p) config.wasabiAccessKeyId = p;
+        p = getParam("restoreWasabiSecretAccessKey", "");
+        if (p) config.wasabiSecretAccessKey = p;
+        p = getParam("restoreResticPassword", "");
+        if (p) config.resticPassword = p;
+    }
+
+    var BackupManager = use("scripts/backup-manager.js", config);
 
     api.local.ReturnResult(
         BackupManager.invoke(action)
