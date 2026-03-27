@@ -52,8 +52,6 @@ if (scheduleType == '1') {
 jps.settings.main.fields[1].default = '${settings.wasabiEndpoint}';
 jps.settings.main.fields[2].default = '${settings.wasabiBucket}';
 jps.settings.main.fields[3].default = '${settings.wasabiAccessKeyId}';
-jps.settings.main.fields[4].default = '${settings.wasabiSecretAccessKey}';
-jps.settings.main.fields[5].default = '${settings.resticPassword}';
 jps.settings.main.fields[6].default = '${settings.backupCount}';
 
 return settings;
