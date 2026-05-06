@@ -3,13 +3,14 @@ set -o pipefail
 
 BASE_URL=$2
 BACKUP_TYPE=$3
-NODE_ID=$4
-BACKUP_LOG_FILE=$5
-ENV_NAME=$6
-BACKUP_COUNT=$7
-APP_PATH=$8
-USER_SESSION=$9
-USER_EMAIL=${10}
+BACKUP_SCOPE=$4
+NODE_ID=$5
+BACKUP_LOG_FILE=$6
+ENV_NAME=$7
+BACKUP_COUNT=$8
+APP_PATH=$9
+USER_SESSION=${10}
+USER_EMAIL=${11}
 
 function forceInstallUpdateRestic(){
     RESTIC_LATEST_VERSION=$(timeout 60 git ls-remote --tags https://github.com/restic/restic.git 2>/dev/null|grep -v alpha|grep -v rc|grep -v "{}"|grep -v doc|awk -F / '{print $3}'|grep -o [0-9.]*|sort -V|tail -n 1);
@@ -83,7 +84,13 @@ function create_snapshot(){
     BACKUP_ADDON_COMMIT_ID=$(git ls-remote https://github.com/${BACKUP_ADDON_REPO}.git 2>/dev/null | grep "/${BACKUP_ADDON_BRANCH}$" | awk '{print $1}')
     [ -z "${BACKUP_ADDON_COMMIT_ID}" ] && BACKUP_ADDON_COMMIT_ID="unknown"
     echo $(date) ${ENV_NAME} "Begin uploading the ${DUMP_NAME} snapshot to Wasabi" | tee -a ${BACKUP_LOG_FILE}  
-    { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_READ_CONCURRENCY=8 restic backup -q --tag "${DUMP_NAME}" --tag "${BACKUP_ADDON_COMMIT_ID}" --tag "${BACKUP_TYPE}" ${APP_PATH} ~/wp_db_backup.sql | tee -a $BACKUP_LOG_FILE; } || { echo "Backup snapshot creation failed."; exit 1; }
+    if [ "${BACKUP_SCOPE}" == "files" ]; then
+        { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_READ_CONCURRENCY=8 restic backup -q --tag "${DUMP_NAME}" --tag "${BACKUP_ADDON_COMMIT_ID}" --tag "${BACKUP_TYPE}" ${APP_PATH} | tee -a $BACKUP_LOG_FILE; } || { echo "Backup snapshot creation failed."; exit 1; }
+    elif [ "${BACKUP_SCOPE}" == "db" ]; then
+        { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_READ_CONCURRENCY=8 restic backup -q --tag "${DUMP_NAME}" --tag "${BACKUP_ADDON_COMMIT_ID}" --tag "${BACKUP_TYPE}" ~/wp_db_backup.sql | tee -a $BACKUP_LOG_FILE; } || { echo "Backup snapshot creation failed."; exit 1; }
+    else
+        { GOGC=20 RESTIC_COMPRESSION=off RESTIC_PACK_SIZE=8 RESTIC_READ_CONCURRENCY=8 restic backup -q --tag "${DUMP_NAME}" --tag "${BACKUP_ADDON_COMMIT_ID}" --tag "${BACKUP_TYPE}" ${APP_PATH} ~/wp_db_backup.sql | tee -a $BACKUP_LOG_FILE; } || { echo "Backup snapshot creation failed."; exit 1; }
+    fi
     echo $(date) ${ENV_NAME} "End uploading the ${DUMP_NAME} snapshot to Wasabi" | tee -a ${BACKUP_LOG_FILE}
 }
 
@@ -93,6 +100,11 @@ function backup(){
     BACKUP_ADDON_BRANCH=$(echo ${BASE_URL}|sed 's|https:\/\/raw.githubusercontent.com\/||'|awk -F / '{print $3}')
     BACKUP_ADDON_COMMIT_ID=$(git ls-remote https://github.com/${BACKUP_ADDON_REPO}.git | grep "/${BACKUP_ADDON_BRANCH}$" | awk '{print $1}')
     echo $(date) ${ENV_NAME} "Creating the ${BACKUP_TYPE} backup (using the backup addon with commit id ${BACKUP_ADDON_COMMIT_ID}) to Wasabi" | tee -a ${BACKUP_LOG_FILE}
+    if [ "${BACKUP_SCOPE}" == "files" ]; then
+        echo $(date) ${ENV_NAME} "Backup scope is files only; skipping DB dump creation" | tee -a ${BACKUP_LOG_FILE}
+        rm -f /var/run/${ENV_NAME}_backup.pid
+        return 0
+    fi
     for i in DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat /var/www/webroot/ROOT/wp-config.php|grep ${i}|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1); done
     DB_HOST=$(cat /var/www/webroot/ROOT/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $1}');
     DB_PORT=$(cat /var/www/webroot/ROOT/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $2}');

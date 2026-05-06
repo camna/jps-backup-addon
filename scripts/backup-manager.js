@@ -12,6 +12,7 @@ function BackupManager(config) {
      *  backupExecNode : {String}
      *  backupCount : {String}
      *  wasabiEndpoint : {String}
+     *  backupScope : {String}
      *  wasabiBucket : {String}
      *  wasabiAccessKeyId : {String}
      *  wasabiSecretAccessKey : {String}
@@ -140,6 +141,7 @@ function BackupManager(config) {
             backupLogFile: "/var/log/backup_addon.log",
             baseUrl: config.baseUrl,
             backupType: backupType,
+            backupScope: (config.backupScope || "both"),
             wasabiEndpoint: config.wasabiEndpoint,
             wasabiBucket: config.wasabiBucket,
             wasabiAccessKeyId: config.wasabiAccessKeyId,
@@ -161,19 +163,19 @@ function BackupManager(config) {
                 baseUrl: config.baseUrl
             }],
             [me.cmd, [
-                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(backupScope) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
             ], backupCallParams],
             [me.cmd, [
-                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh backup %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh backup %(baseUrl) %(backupType) %(backupScope) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
             ], backupCallParams],
             [me.cmd, [
-                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh create_snapshot %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh create_snapshot %(baseUrl) %(backupType) %(backupScope) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
             ], backupCallParams],
             [me.cmd, [
-                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh rotate_snapshots %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh rotate_snapshots %(baseUrl) %(backupType) %(backupScope) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
             ], backupCallParams],
             [me.cmd, [
-                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
+                me.getResticEnvVars() + ' && bash /root/%(envName)_backup-logic.sh check_backup_repo %(baseUrl) %(backupType) %(backupScope) %(nodeId) %(backupLogFile) %(envName) %(backupCount) %(appPath)'
             ], backupCallParams]
         ]);
     };
@@ -185,6 +187,7 @@ function BackupManager(config) {
             baseUrl: config.baseUrl,
             appPath: "/var/www/webroot/ROOT",
             wasabiEndpoint: config.wasabiEndpoint,
+            backupScope: (config.backupScope || "both"),
             wasabiBucket: config.wasabiBucket,
             wasabiAccessKeyId: config.wasabiAccessKeyId,
             wasabiSecretAccessKey: config.wasabiSecretAccessKey,
@@ -203,12 +206,16 @@ function BackupManager(config) {
                 'SNAPSHOT_ID=$(restic snapshots --json | jq -r --arg id "${BACKUPID}" \'.[] | select(.tags[] | contains($id)) | .short_id\' | head -1)',
                 '[ -n "${SNAPSHOT_ID}" ] || { echo "Snapshot not found"; exit 1; }',
                 'GOGC=20 restic restore ${SNAPSHOT_ID} --target /',
-                'echo $(date) %(envName) Restoring the database from snapshot ${BACKUPID}',
-                '! which mysqld || service mysql start 2>&1',
-                'for i in DB_HOST DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat %(appPath)/wp-config.php | grep ${i} |grep -v \'^[[:space:]]*#\' | tr -d \'[[:blank:]]\' | awk -F \',\' \'{print $2}\' | tr -d "\\"\');"|tr -d \'\\r\'|tail -n 1); done',
-                'source /etc/jelastic/metainf.conf ; if [ "${COMPUTE_TYPE}" == "lemp" -o "${COMPUTE_TYPE}" == "llsmp" ]; then wget -O /root/addAppDbUser.sh %(baseUrl)/scripts/addAppDbUser.sh; chmod +x /root/addAppDbUser.sh; bash /root/addAppDbUser.sh ${DB_USER} ${DB_PASSWORD} ${DB_HOST}; fi',
-                'mysql -u${DB_USER} -p${DB_PASSWORD} -h ${DB_HOST} --execute="CREATE DATABASE IF NOT EXISTS ${DB_NAME};"',
-                'mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_PASSWORD} ${DB_NAME} --force < /root/wp_db_backup.sql'
+                'if [ -f /root/wp_db_backup.sql ]; then ' +
+                  'echo $(date) %(envName) Restoring the database from snapshot ${BACKUPID}; ' +
+                  '! which mysqld || service mysql start 2>&1; ' +
+                  'for i in DB_HOST DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat %(appPath)/wp-config.php | grep ${i} |grep -v \'^[[:space:]]*#\' | tr -d \'[[:blank:]]\' | awk -F \',\' \'{print $2}\' | tr -d "\\"\');"|tr -d \'\\r\'|tail -n 1); done; ' +
+                  'source /etc/jelastic/metainf.conf ; if [ "${COMPUTE_TYPE}" == "lemp" -o "${COMPUTE_TYPE}" == "llsmp" ]; then wget -O /root/addAppDbUser.sh %(baseUrl)/scripts/addAppDbUser.sh; chmod +x /root/addAppDbUser.sh; bash /root/addAppDbUser.sh ${DB_USER} ${DB_PASSWORD} ${DB_HOST}; fi; ' +
+                  'mysql -u${DB_USER} -p${DB_PASSWORD} -h ${DB_HOST} --execute="CREATE DATABASE IF NOT EXISTS ${DB_NAME};"; ' +
+                  'mysql -h ${DB_HOST} -u ${DB_USER} -p${DB_PASSWORD} ${DB_NAME} --force < /root/wp_db_backup.sql; ' +
+                'else ' +
+                  'echo $(date) %(envName) "No database dump found in snapshot; skipping DB restore."; ' +
+                'fi'
             ],
             restoreParams]
         ]);
