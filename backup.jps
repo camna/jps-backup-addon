@@ -1,7 +1,7 @@
 type: update
 jpsVersion: 6.1.1
 name: WordPress Backup/Restore for the filesystem and the databases
-id: wp-backup
+id: wp-backup-sentree
 targetEditions: any
 logo: /images/backup-logo.svg
 description: Backup Add-On for the WordPress application root directory and the database. It can be used to create scheduled backups according to any required timezone and restore corrupted websites, even if the content has been completely deleted.
@@ -154,8 +154,7 @@ settings:
         caption: Number of backups
         tooltip: "The number of newest backups to be kept during rotation."  
         min: 1
-        max: 30
-        default: 5
+        default: 90
     onBeforeInit: scripts/configOnBeforeInit.js
         
   restore:
@@ -187,7 +186,7 @@ buttons:
   confirmText: You are going to restore from a backup, which will override all your existing data. This action cannot be canceled or reverted. Do you want to proceed?
 
 globals:
-  scriptSufix: wp-backup
+  scriptSufix: wp-backup-sentree
 
 onInstall:
   - checkApplication
@@ -324,11 +323,25 @@ actions:
     - deleteDBdump
     
   restore:
+    - if ("${settings.backupBeforeRestore}" == "true"):
+        - callScript: backup
+        - deleteDBdump
     - cmd[cp]: |-
-        echo "${settings.backupedEnvName}" > /root/.backupedenv
+        echo "${settings.restorebackupedEnvName}" > /root/.backupedenv
         echo "${settings.backupDir}" > /root/.backupid
       user: root
-    - callScript: restore
+    - script: |-
+        var params = {
+            action: "restore",
+            restoreEnvName: "${settings.restoreEnvName}",
+            restoreWasabiEndpoint: "${settings.restoreWasabiEndpoint}",
+            restoreWasabiBucket: "${settings.restoreWasabiBucket}",
+            restoreWasabiAccessKeyId: "${settings.restoreWasabiAccessKeyId}",
+            restoreWasabiSecretAccessKey: "${settings.restoreWasabiSecretAccessKey}",
+            restoreResticPassword: "${settings.restoreResticPassword}"
+        };
+        var resp = api.dev.scripting.Eval(appid, session, '${env.envName}-${globals.scriptSufix}', params);
+        return resp.response || resp;callScript: restore
     - deleteDBdump
 
   deleteDBdump:
