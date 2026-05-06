@@ -11,6 +11,7 @@ targetNodes:
   nodeType:
     - nginxphp
     - litespeedphp
+    - nginxphp-dockerized
     - lemp
     - llsmp
 
@@ -242,7 +243,7 @@ actions:
     - if (response.out == "Non-supported"):
       - stopEvent:
           type: warning
-          message: Deployed application is not supported by Backup add-on.
+          message: This node has no standard webroot at /var/www/webroot/ROOT, so the backup add-on cannot run here. For generic PHP apps, use Files-only backup unless wp-config.php with DB_* settings is present for database dumps.
    
   checkAddons:
     - script: |-

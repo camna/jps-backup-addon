@@ -105,9 +105,14 @@ function backup(){
         rm -f /var/run/${ENV_NAME}_backup.pid
         return 0
     fi
-    for i in DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat /var/www/webroot/ROOT/wp-config.php|grep ${i}|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1); done
-    DB_HOST=$(cat /var/www/webroot/ROOT/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $1}');
-    DB_PORT=$(cat /var/www/webroot/ROOT/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $2}');
+    if [ ! -f "${APP_PATH}/wp-config.php" ]; then
+        echo $(date) ${ENV_NAME} "Database backup requires ${APP_PATH}/wp-config.php (WordPress-style DB_NAME, DB_USER, DB_PASSWORD, DB_HOST). Use Backup content: Files only, or deploy credentials in that file." | tee -a ${BACKUP_LOG_FILE}
+        rm -f /var/run/${ENV_NAME}_backup.pid
+        exit 1
+    fi
+    for i in DB_USER DB_PASSWORD DB_NAME; do declare "${i}"=$(cat ${APP_PATH}/wp-config.php|grep ${i}|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1); done
+    DB_HOST=$(cat ${APP_PATH}/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $1}');
+    DB_PORT=$(cat ${APP_PATH}/wp-config.php|grep DB_HOST|grep -v '^[[:space:]]*#'|tr -d '[[:blank:]]'|awk -F ',' '{print $2}'|tr -d "\"');"|tr -d '\r'|tail -n 1|awk -F ':' '{print $2}');
     if [ -n "${DB_PORT}" ]; then 
         MYSQLDUMP_DB_PORT_OPTION="-P ${DB_PORT}"
     else
