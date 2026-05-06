@@ -20,7 +20,7 @@ settings:
       - type: radio-fieldset
         name: scheduleType
         hidden: false
-        default: '1'
+        default: '2'
         values:
           - value: 1 
             caption: Pre-defined
@@ -53,7 +53,7 @@ settings:
               name: backupTime
               caption: Time
               inputType: time
-              default: "09:00"
+              default: "05:00"
               cls: x-form-text
               width: 120
               required: true
@@ -112,8 +112,21 @@ settings:
         name: wasabiEndpoint
         caption: Wasabi Endpoint
         tooltip: "Wasabi S3-compatible endpoint (e.g., s3.wasabisys.com or s3.us-west-1.wasabisys.com)"
-        default: "s3.wasabisys.com"
+        default: "s3.us-east-2.wasabisys.com"
         required: true
+      - type: list
+        name: backupScope
+        caption: Backup content
+        tooltip: "Choose what to include in backups: files, database, or both."
+        required: true
+        values:
+          - value: both
+            caption: Files + Database
+          - value: files
+            caption: Files only
+          - value: db
+            caption: Database only
+        default: both
       - type: string
         name: wasabiBucket
         caption: Wasabi Bucket
@@ -211,6 +224,7 @@ onAfterClone:
       tz: ${settings.tz}    
       backupCount: ${settings.backupCount}
       wasabiEndpoint: ${settings.wasabiEndpoint}
+      backupScope: ${settings.backupScope}
       wasabiBucket: ${settings.wasabiBucket}
       wasabiAccessKeyId: ${settings.wasabiAccessKeyId}
       wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}
@@ -280,6 +294,7 @@ actions:
         userId: ${env.uid}
         backupExecNode: ${nodes.cp.master.id}
         wasabiEndpoint: ${this.wasabiEndpoint}
+        backupScope: ${this.backupScope}
         wasabiBucket: ${this.wasabiBucket}
         wasabiAccessKeyId: ${this.wasabiAccessKeyId}
         wasabiSecretAccessKey: ${this.wasabiSecretAccessKey}
@@ -376,6 +391,7 @@ actions:
         cronTime: ${globals.cron}
         backupCount: ${settings.backupCount}
         wasabiEndpoint: ${settings.wasabiEndpoint}
+        backupScope: ${settings.backupScope}
         wasabiBucket: ${settings.wasabiBucket}
         wasabiAccessKeyId: ${settings.wasabiAccessKeyId}
         wasabiSecretAccessKey: ${settings.wasabiSecretAccessKey}

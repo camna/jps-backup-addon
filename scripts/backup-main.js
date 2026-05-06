@@ -15,6 +15,7 @@ function run() {
         backupExecNode       : "${backupExecNode}",
         backupCount          : "${backupCount}",
         wasabiEndpoint       : "${wasabiEndpoint}",
+        backupScope          : "${backupScope}",
         wasabiBucket         : "${wasabiBucket}",
         wasabiAccessKeyId    : "${wasabiAccessKeyId}",
         wasabiSecretAccessKey: "${wasabiSecretAccessKey}",
