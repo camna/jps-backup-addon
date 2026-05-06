@@ -327,7 +327,7 @@ actions:
         - callScript: backup
         - deleteDBdump
     - cmd[cp]: |-
-        echo "${settings.restorebackupedEnvName}" > /root/.backupedenv
+        echo "${settings.restoreEnvName}" > /root/.backupedenv
         echo "${settings.backupDir}" > /root/.backupid
       user: root
     - script: |-
@@ -341,7 +341,7 @@ actions:
             restoreResticPassword: "${settings.restoreResticPassword}"
         };
         var resp = api.dev.scripting.Eval(appid, session, '${env.envName}-${globals.scriptSufix}', params);
-        return resp.response || resp;callScript: restore
+        return resp.response || resp;
     - deleteDBdump
 
   deleteDBdump:
