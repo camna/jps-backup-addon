@@ -83,9 +83,7 @@ function resolveCpMasterNodeId() {
 
   var resolved = [
     '${nodes.cp.master.id}',
-    '${nodes.cp[0].id}',
-    '${nodes.lemp.master.id}',
-    '${nodes.lemp[0].id}'
+    '${nodes.lemp.master.id}'
   ];
   for (var p = 0; p < resolved.length; p++) {
     if (!isEmpty(resolved[p])) return resolved[p];
