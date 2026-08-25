@@ -67,7 +67,24 @@ function normalizeEnvName(name) {
   return s;
 }
 
+function scriptParam(name) {
+  try {
+    var v = getParam(name);
+    if (v === null || v === undefined) return "";
+    v = String(v).trim();
+    // Unresolved placeholders passed through the URL
+    if (!v || v.indexOf("${") === 0) return "";
+    return v;
+  } catch (e) {
+    return "";
+  }
+}
+
 function resolveCpMasterNodeId() {
+  // Prefer values passed via onBeforeInit URL (manifest placeholders resolve there)
+  var fromParam = scriptParam("cpNodeId");
+  if (!isEmpty(fromParam)) return fromParam;
+
   var resolved = [
     '${nodes.cp.master.id}',
     '${nodes.cp[0].id}',
@@ -79,14 +96,25 @@ function resolveCpMasterNodeId() {
   }
 
   var envNames = [
+    normalizeEnvName(scriptParam("envName")),
+    normalizeEnvName(scriptParam("envDomain")),
+    scriptParam("envAppid"),
     normalizeEnvName('${env.envName}'),
     normalizeEnvName('${env.name}'),
-    normalizeEnvName('${env.domain}')
+    normalizeEnvName('${env.domain}'),
+    '${env.appid}'
   ];
   for (var e = 0; e < envNames.length; e++) {
     if (isEmpty(envNames[e])) continue;
     try {
-      var envInfo = api.env.control.GetEnvInfo(envNames[e], session);
+      var envInfo = null;
+      try {
+        envInfo = api.env.control.GetEnvInfo(envNames[e], session);
+      } catch (e1) {
+        try {
+          envInfo = jelastic.env.control.GetEnvInfo(envNames[e], session);
+        } catch (e2) {}
+      }
       if (envInfo && envInfo.result == 0 && envInfo.nodes) {
         var id = pickCpNodeId(envInfo.nodes);
         if (!isEmpty(id)) return id;
