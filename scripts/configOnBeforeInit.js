@@ -130,6 +130,28 @@ function timeFromSavedOrNode(saved, nodeId) {
   return "05:00";
 }
 
+function buildBackupTimeValuesByEnv() {
+  var map = {};
+  try {
+    var resp = jelastic.env.control.GetEnvs();
+    if (!resp || resp.result !== 0 || !resp.infos) return map;
+    for (var i = 0; i < resp.infos.length; i++) {
+      var info = resp.infos[i];
+      var env = info.env || {};
+      var nodeId = pickCpNodeId(info.nodes);
+      if (isEmpty(nodeId)) continue;
+      var time = computeDefaultTimeFromNodeId(nodeId);
+      if (isEmpty(time)) continue;
+      if (env.appid) map[String(env.appid)] = time;
+      if (env.domain) map[String(env.domain)] = time;
+      if (env.envName) map[String(env.envName)] = time;
+      if (env.shortdomain) map[String(env.shortdomain)] = time;
+      map[time] = time;
+    }
+  } catch (e) {}
+  return map;
+}
+
 function getPlatformSecret(secretName) {
   try {
     var resp = api.configuration.secrets.GetSecret({
@@ -159,6 +181,76 @@ function applyPlatformSecretDefault(field, secretName) {
   if (!isEmpty(data)) field.default = data;
 }
 
+/**
+ * Safe Time field for Configure:
+ * - Never use inputType:time (crashes when saved backupTime is an appid).
+ * - List values keyed by appid AND HH:MM so old and new saved values both display.
+ * - Works for existing installs without reinstall as long as this script loads from baseUrl.
+ */
+function buildSafeBackupTimeField(savedBackupTime, cpNodeIdForTime, backupTime) {
+  var timeValues = buildBackupTimeValuesByEnv();
+  if (isEmpty(timeValues) || !timeValues[backupTime]) {
+    timeValues[backupTime] = backupTime;
+  }
+  if (!isEmpty(savedBackupTime) && !timeValues[String(savedBackupTime)]) {
+    timeValues[String(savedBackupTime)] = backupTime;
+  }
+  var appid = '${env.appid}';
+  if (!isEmpty(appid) && !timeValues[String(appid)]) {
+    timeValues[String(appid)] = backupTime;
+  }
+
+  var timeValue = backupTime;
+  if (!isEmpty(savedBackupTime)) {
+    timeValue = String(savedBackupTime);
+  } else if (!isEmpty(appid)) {
+    timeValue = String(appid);
+  }
+
+  return {
+    type: "list",
+    name: "backupTime",
+    caption: "Time",
+    required: true,
+    editable: false,
+    forceSelection: true,
+    hideTrigger: true,
+    readOnly: true,
+    width: 120,
+    tooltip: isEmpty(cpNodeIdForTime)
+      ? "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 -> 06:31, node 1164 -> 04:16)."
+      : ("CP node ID " + cpNodeIdForTime + " -> " + backupTime + " (last digit = hour, previous two = minutes)."),
+    initialValue: timeValue,
+    default: timeValue,
+    value: timeValue,
+    values: timeValues
+  };
+}
+
+function forceSafeBackupTimeField() {
+  try {
+    var savedBackupTime = '${settings.backupTime}';
+    var cpNodeIdForTime = resolveCpMasterNodeId();
+    var backupTime = timeFromSavedOrNode(savedBackupTime, cpNodeIdForTime);
+    jps.settings.main.fields[0].showIf[2][0] = buildSafeBackupTimeField(
+      savedBackupTime,
+      cpNodeIdForTime,
+      backupTime
+    );
+  } catch (eSafe) {
+    jps.settings.main.fields[0].showIf[2][0] = {
+      type: "string",
+      name: "backupTime",
+      caption: "Time",
+      required: true,
+      width: 120,
+      initialValue: "05:00",
+      default: "05:00",
+      value: "05:00"
+    };
+  }
+}
+
 try {
   var zones = toNative(TimeZone.getAvailableIDs());
   var values = {};
@@ -179,33 +271,7 @@ try {
   if (scheduleType == '1') {
       setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
   } else if (scheduleType == '2') {
-      // Configure has env/node context. Do NOT use inputType:time here:
-      // older installs saved backupTime as an env appid (install list workaround),
-      // and the dashboard re-applies that onto a time field and crashes the form.
-      // A single-option list accepts only HH:MM and ignores a bad saved appid.
-      var savedBackupTime = '${settings.backupTime}';
-      var cpNodeIdForTime = resolveCpMasterNodeId();
-      var backupTime = timeFromSavedOrNode(savedBackupTime, cpNodeIdForTime);
-
-      jps.settings.main.fields[0].showIf[2][0] = {
-        type: "list",
-        name: "backupTime",
-        caption: "Time",
-        required: true,
-        editable: false,
-        forceSelection: true,
-        hideTrigger: true,
-        width: 120,
-        tooltip: isEmpty(cpNodeIdForTime)
-          ? "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 -> 06:31, node 1164 -> 04:16)."
-          : ("CP node ID " + cpNodeIdForTime + " -> " + backupTime + " (last digit = hour, previous two = minutes)."),
-        initialValue: backupTime,
-        default: backupTime,
-        value: backupTime,
-        values: [
-          { value: backupTime, caption: backupTime }
-        ]
-      };
+      forceSafeBackupTimeField();
       var sun = boolSetting('${settings.sun}', true),
           mon = boolSetting('${settings.mon}', true),
           tue = boolSetting('${settings.tue}', true),
@@ -269,6 +335,7 @@ try {
     settings: jps.settings
   };
 } catch (eConfig) {
+  forceSafeBackupTimeField();
   return {
     result: 0,
     settings: jps.settings

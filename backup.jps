@@ -50,14 +50,16 @@ settings:
                   caption: "Monthly (at 00:00 on day 1)"
               default: 0 0 * * *
           2:
-            - type: string
+            - type: list
               name: backupTime
               caption: Time
-              inputType: time
               tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16)."
-              cls: x-form-text
+              editable: false
+              forceSelection: true
+              hideTrigger: true
               width: 120
               required: true
+              values: {}
             - caption: Days
               type: compositefield
               name: days
@@ -160,13 +162,13 @@ settings:
         tooltip: "The number of newest backups to be kept during rotation."  
         min: 1
         default: 90
-    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time14
+    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time15
         
   restore:
     fields: []
     onBeforeInit: scripts/multipleRestoreOnBeforeInit.js
       
-onBeforeInit: scripts/backupOnBeforeInit.js?v=20260825-time14
+onBeforeInit: scripts/backupOnBeforeInit.js?v=20260825-time15
 
 
 buttons:
