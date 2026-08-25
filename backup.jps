@@ -54,7 +54,7 @@ settings:
               name: backupTime
               caption: Time
               inputType: time
-              tooltip: "Defaults from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31)."
+              tooltip: "Auto from CP node ID on install (last digit = hour, previous two = minutes). Example: node 1164 → 04:16."
               cls: x-form-text
               width: 120
               required: true
@@ -160,15 +160,13 @@ settings:
         tooltip: "The number of newest backups to be kept during rotation."  
         min: 1
         default: 90
-    onBeforeInit: |
-      return eval("var injectedCpNodeId=\"${nodes.cp.master.id}\";var injectedEnvName=\"${env.envName}\";var injectedEnvDomain=\"${env.domain}\";var injectedEnvAppid=\"${env.appid}\";\n" + new com.hivext.api.core.utils.Transport().get("${baseUrl}/scripts/configOnBeforeInit.js?v=20260825-time8"));
+    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time9
         
   restore:
     fields: []
     onBeforeInit: scripts/multipleRestoreOnBeforeInit.js
       
-onBeforeInit: |
-  return eval("var injectedCpNodeId=\"${nodes.cp.master.id}\";var injectedEnvName=\"${env.envName}\";var injectedEnvDomain=\"${env.domain}\";var injectedEnvAppid=\"${env.appid}\";\n" + new com.hivext.api.core.utils.Transport().get("${baseUrl}/scripts/backupOnBeforeInit.js?v=20260825-time8"));
+onBeforeInit: scripts/backupOnBeforeInit.js?v=20260825-time9
 
 
 buttons:
@@ -364,8 +362,30 @@ actions:
     - script: |
         var resp = {result:0, onAfterReturn: {setGlobals:{cron: ""}}}, offset = java.util.TimeZone.getTimeZone("${settings.tz}").getRawOffset(),
             setGlobals = resp.onAfterReturn.setGlobals;
-        
-        var time = "${settings.backupTime}".split(":"),
+
+        function computeDefaultTimeFromNodeId(nodeId) {
+          var s = String(nodeId == null ? "" : nodeId).replace(/[^0-9]/g, "");
+          if (s.length === 0) return "";
+          if (s.length < 3) s = ("000" + s).slice(-3);
+          var hour = parseInt(s.slice(-1), 10);
+          var minute = parseInt(s.slice(-3, -1), 10);
+          if (isNaN(hour)) hour = 0;
+          if (isNaN(minute)) minute = 0;
+          minute = minute % 60;
+          hour = hour % 24;
+          var hh = (hour < 10 ? "0" : "") + hour;
+          var mm = (minute < 10 ? "0" : "") + minute;
+          return hh + ":" + mm;
+        }
+
+        // Node ID is available here (install/configure). Prefer it over the form value
+        // so schedule is correct even when the install dialog could not resolve the env.
+        var nodeId = "${nodes.cp.master.id}";
+        var autoTime = computeDefaultTimeFromNodeId(nodeId);
+        var userTime = "${settings.backupTime}";
+        var timeStr = autoTime;
+        if (!timeStr) timeStr = userTime;
+        var time = String(timeStr).split(":"),
             d1 = new Date(2020, 1, 10, parseInt(time[0],10), parseInt(time[1],10)),
             d2 = new Date(d1.getTime() - offset),
             dd = d2.getDate() - d1.getDate(),

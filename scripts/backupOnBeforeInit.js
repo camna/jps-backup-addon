@@ -2,6 +2,7 @@ import java.util.TimeZone;
 var zones = toNative(TimeZone.getAvailableIDs());
 var values = {};
 var defaultTz = "America/New_York";
+var SYSTEM_APPID = "1dd8d191d38fff45e62564fcf67fdcd6";
 
 function isEmpty(v) {
   if (v === null || v === undefined) return true;
@@ -33,27 +34,26 @@ function pickCpNodeId(nodes) {
   var i, n, node;
   for (i = 0, n = nodes.length; i < n; i++) {
     node = nodes[i];
-    if (node.nodeGroup == "cp" && isMasterNode(node) && node.id) return node.id;
+    if (node.nodeGroup == "cp" && isMasterNode(node) && node.id) return String(node.id);
   }
   for (i = 0, n = nodes.length; i < n; i++) {
     node = nodes[i];
-    if (node.nodeGroup == "cp" && node.id) return node.id;
+    if (node.nodeGroup == "cp" && node.id) return String(node.id);
   }
   for (i = 0, n = nodes.length; i < n; i++) {
     node = nodes[i];
-    if (isComputeNode(node) && isMasterNode(node) && node.id) return node.id;
+    if (isComputeNode(node) && isMasterNode(node) && node.id) return String(node.id);
   }
   for (i = 0, n = nodes.length; i < n; i++) {
     node = nodes[i];
-    if (isComputeNode(node) && node.id) return node.id;
+    if (isComputeNode(node) && node.id) return String(node.id);
   }
-  return nodes[0] && nodes[0].id ? nodes[0].id : "";
+  return nodes[0] && nodes[0].id ? String(nodes[0].id) : "";
 }
 
 function normalizeEnvName(name) {
   if (isEmpty(name)) return "";
   var s = String(name).trim();
-  // GetEnvInfo requires the short env name, not the FQDN shown in the install UI
   var dot = s.indexOf(".");
   if (dot > 0) s = s.substring(0, dot);
   return s;
@@ -64,94 +64,141 @@ function scriptParam(name) {
     var v = getParam(name);
     if (v === null || v === undefined) return "";
     v = String(v).trim();
-    if (!v || v.indexOf("${") === 0) return "";
+    if (!v || v.indexOf("$") === 0) return "";
     return v;
   } catch (e) {
     return "";
   }
 }
 
-function findFieldDefault(name) {
+function requestParam(name) {
   try {
-    var fields = jps.settings.main.fields;
-    for (var i = 0, n = fields.length; i < n; i++) {
-      if (fields[i] && fields[i].name == name && !isEmpty(fields[i].default)) {
-        return String(fields[i].default);
-      }
-      if (fields[i] && fields[i].name == name && !isEmpty(fields[i].value)) {
-        return String(fields[i].value);
-      }
+    if (typeof Request === "undefined" || !Request) return "";
+    var v = Request.getParameter(name);
+    if (v === null || v === undefined) return "";
+    v = String(v).trim();
+    if (!v || v.indexOf("$") === 0) return "";
+    return v;
+  } catch (e) {
+    return "";
+  }
+}
+
+function envMatches(env, needle) {
+  if (!env || isEmpty(needle)) return false;
+  var n = String(needle);
+  var shortNeedle = normalizeEnvName(n);
+  return env.envName == n || env.envName == shortNeedle ||
+    env.shortdomain == n || env.shortdomain == shortNeedle ||
+    env.domain == n || env.appid == n ||
+    normalizeEnvName(env.domain) == shortNeedle;
+}
+
+function getEnvInfoByName(name) {
+  if (isEmpty(name)) return null;
+  try {
+    var envInfo = api.env.control.GetEnvInfo(name, session);
+    if (envInfo && envInfo.result == 0 && envInfo.nodes) return envInfo;
+  } catch (e1) {}
+  try {
+    var envInfo2 = jelastic.env.control.GetEnvInfo(name, session);
+    if (envInfo2 && envInfo2.result == 0 && envInfo2.nodes) return envInfo2;
+  } catch (e2) {}
+  return null;
+}
+
+function resolveTargetEnvHints() {
+  var hints = [];
+  var keys = [
+    "envName", "envname", "name", "domain", "envDomain", "envAppid",
+    "appid", "targetEnv", "env", "shortdomain"
+  ];
+  var i, k, v;
+  for (i = 0; i < keys.length; i++) {
+    k = keys[i];
+    v = scriptParam(k);
+    if (!isEmpty(v)) hints.push(v);
+    v = requestParam(k);
+    if (!isEmpty(v)) hints.push(v);
+  }
+  try {
+    if (typeof appid !== "undefined" && appid && String(appid) !== SYSTEM_APPID) {
+      hints.push(String(appid));
     }
-  } catch (e) {}
-  return "";
+  } catch (eApp) {}
+  try {
+    if (typeof envName !== "undefined" && !isEmpty(envName)) hints.push(String(envName));
+  } catch (eName) {}
+  try {
+    if (typeof env !== "undefined" && env) {
+      if (env.envName) hints.push(String(env.envName));
+      if (env.name) hints.push(String(env.name));
+      if (env.domain) hints.push(String(env.domain));
+      if (env.appid) hints.push(String(env.appid));
+    }
+  } catch (eEnv) {}
+
+  // Placeholders — substituted only when the platform has env context
+  var placeholders = [
+    '${env.envName}',
+    '${env.name}',
+    '${env.domain}',
+    '${env.appid}',
+    '${env.shortdomain}'
+  ];
+  for (i = 0; i < placeholders.length; i++) {
+    if (!isEmpty(placeholders[i])) hints.push(placeholders[i]);
+  }
+  return hints;
 }
 
 function resolveCpMasterNodeId() {
-  // Prefer values injected by the parse-safe inline wrapper in backup.jps
-  if (typeof injectedCpNodeId !== "undefined" && !isEmpty(injectedCpNodeId)) {
-    return String(injectedCpNodeId);
-  }
-
-  var fromHidden = findFieldDefault("cpNodeId");
-  if (!isEmpty(fromHidden)) return fromHidden;
-
-  var fromSettings = '${settings.cpNodeId}';
-  if (!isEmpty(fromSettings)) return fromSettings;
-
-  var fromParam = scriptParam("cpNodeId");
-  if (!isEmpty(fromParam)) return fromParam;
-
-  try {
-    if (typeof nodes !== "undefined" && nodes && nodes.cp) {
-      if (nodes.cp.master && nodes.cp.master.id) return String(nodes.cp.master.id);
-    }
-  } catch (eNodes) {}
-
-  var resolved = [
+  var direct = [
     '${nodes.cp.master.id}',
-    '${nodes.lemp.master.id}'
+    '${nodes.lemp.master.id}',
+    '${targetNodes.master.id}'
   ];
-  for (var p = 0, n = resolved.length; p < n; p++) {
-    if (!isEmpty(resolved[p])) return resolved[p];
+  var d;
+  for (d = 0; d < direct.length; d++) {
+    if (!isEmpty(direct[d])) return String(direct[d]);
   }
 
-  var envNames = [
-    normalizeEnvName(typeof injectedEnvName !== "undefined" ? injectedEnvName : ""),
-    normalizeEnvName(typeof injectedEnvDomain !== "undefined" ? injectedEnvDomain : ""),
-    typeof injectedEnvAppid !== "undefined" ? injectedEnvAppid : "",
-    normalizeEnvName(scriptParam("envName")),
-    normalizeEnvName(scriptParam("envDomain")),
-    scriptParam("envAppid"),
-    normalizeEnvName(typeof envName !== "undefined" ? envName : ""),
-    normalizeEnvName(typeof env !== "undefined" && env ? (env.envName || env.name || env.domain || "") : ""),
-    normalizeEnvName('${env.envName}'),
-    normalizeEnvName('${env.name}'),
-    normalizeEnvName('${env.domain}'),
-    '${env.appid}'
-  ];
-  try {
-    if (typeof appid !== "undefined" && appid && String(appid) !== "1dd8d191d38fff45e62564fcf67fdcd6") {
-      envNames.push(String(appid));
+  var hints = resolveTargetEnvHints();
+  var h, name, envInfo, id, resp, i, info, env;
+
+  for (h = 0; h < hints.length; h++) {
+    name = normalizeEnvName(hints[h]);
+    if (isEmpty(name)) name = hints[h];
+    envInfo = getEnvInfoByName(name);
+    if (envInfo) {
+      id = pickCpNodeId(envInfo.nodes);
+      if (!isEmpty(id)) return id;
     }
-  } catch (eApp) {}
-
-  for (var e = 0; e < envNames.length; e++) {
-    if (isEmpty(envNames[e])) continue;
-    try {
-      var envInfo = null;
-      try {
-        envInfo = api.env.control.GetEnvInfo(envNames[e], session);
-      } catch (e1) {
-        try {
-          envInfo = jelastic.env.control.GetEnvInfo(envNames[e], session);
-        } catch (e2) {}
-      }
-      if (envInfo && envInfo.result == 0 && envInfo.nodes) {
-        var id = pickCpNodeId(envInfo.nodes);
-        if (!isEmpty(id)) return id;
-      }
-    } catch (err) {}
+    // appid can be used raw
+    envInfo = getEnvInfoByName(hints[h]);
+    if (envInfo) {
+      id = pickCpNodeId(envInfo.nodes);
+      if (!isEmpty(id)) return id;
+    }
   }
+
+  // Official-addon pattern: GetEnvs() needs no env placeholder
+  try {
+    resp = jelastic.env.control.GetEnvs();
+    if (resp && resp.result === 0 && resp.infos) {
+      for (i = 0; i < resp.infos.length; i++) {
+        info = resp.infos[i];
+        env = info.env || {};
+        for (h = 0; h < hints.length; h++) {
+          if (envMatches(env, hints[h])) {
+            id = pickCpNodeId(info.nodes);
+            if (!isEmpty(id)) return id;
+          }
+        }
+      }
+    }
+  } catch (eGetEnvs) {}
+
   return "";
 }
 
@@ -186,11 +233,11 @@ function applyPlatformSecretDefault(field, secretName) {
 
 function computeDefaultTimeFromNodeId(nodeId) {
   var s = String(nodeId == null ? "" : nodeId).replace(/\D/g, "");
-  if (s.length === 0) return "05:00";
+  if (s.length === 0) return "";
   if (s.length < 3) s = ("000" + s).slice(-3);
   var hour = parseInt(s.slice(-1), 10);
   var minute = parseInt(s.slice(-3, -1), 10);
-  if (isNaN(hour)) hour = 5;
+  if (isNaN(hour)) hour = 0;
   if (isNaN(minute)) minute = 0;
   minute = minute % 60;
   hour = hour % 24;
@@ -208,16 +255,14 @@ for (var i = 0, n = zones.length; i < n; i++) {
   if (Math.abs(h) < 10) h = h < 0 ? "-0" + Math.abs(h) : "+0" + h; else if (h >= 0) h = "+" + h;
   values[zones[i]] = zones[i] + (zones[i] == "GMT" ? "" : " (GMT" + h + ":" + m + ")");
 }
-      
+
 jps.settings.main.fields[0].showIf[2][2].values = values;
 
-// Preserve marketplace / secret-manager defaults; only fill gaps
 var tzField = jps.settings.main.fields[0].showIf[2][2];
 if (isEmpty(tzField.value) && isEmpty(tzField.default)) {
   tzField.value = defaultTz;
 }
 
-var timeField = jps.settings.main.fields[0].showIf[2][0];
 var savedBackupTime = '${settings.backupTime}';
 var cpNodeIdForTime = "";
 var resolvedBackupTime = savedBackupTime;
@@ -231,7 +276,7 @@ jps.settings.main.fields[0].showIf[2][0] = {
   caption: "Time",
   inputType: "time",
   tooltip: isEmpty(cpNodeIdForTime)
-    ? "Defaults from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31)."
+    ? "Auto from CP node ID on install (last digit = hour, previous two = minutes). Example: node 1164 → 04:16."
     : ("CP node ID " + cpNodeIdForTime + " → " + resolvedBackupTime + " (last digit = hour, previous two = minutes)."),
   default: resolvedBackupTime,
   value: resolvedBackupTime,
@@ -240,13 +285,12 @@ jps.settings.main.fields[0].showIf[2][0] = {
   required: true
 };
 
-// Prefill from platform Secret Manager when field defaults are still empty
 applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
 applyPlatformSecretDefault(jps.settings.main.fields[4], "wasabiAccessKeyId");
 applyPlatformSecretDefault(jps.settings.main.fields[5], "wasabiSecretAccessKey");
 applyPlatformSecretDefault(jps.settings.main.fields[6], "resticPassword");
-      
+
 return {
-    result: 0,
-    settings: jps.settings
+  result: 0,
+  settings: jps.settings
 };
