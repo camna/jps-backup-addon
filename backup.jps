@@ -50,17 +50,14 @@ settings:
                   caption: "Monthly (at 00:00 on day 1)"
               default: 0 0 * * *
           2:
-            - type: list
+            - type: string
               name: backupTime
               caption: Time
-              required: true
-              editable: false
-              forceSelection: true
-              hideTrigger: true
-              readOnly: true
-              width: 120
+              inputType: time
               tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16)."
-              values: {}
+              cls: x-form-text
+              width: 120
+              required: true
             - caption: Days
               type: compositefield
               name: days
@@ -163,7 +160,7 @@ settings:
         tooltip: "The number of newest backups to be kept during rotation."  
         min: 1
         default: 90
-    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time11
+    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time12
         
   restore:
     fields: []
@@ -382,12 +379,15 @@ actions:
         }
 
         // Node ID is available here (install/configure). Prefer it over the form value
-        // so schedule is correct even when the install dialog could not resolve the env.
+        // so schedule is correct even when install stored an appid key instead of HH:MM.
         var nodeId = "${nodes.cp.master.id}";
         var autoTime = computeDefaultTimeFromNodeId(nodeId);
         var userTime = "${settings.backupTime}";
         var timeStr = autoTime;
-        if (!timeStr) timeStr = userTime;
+        if (!timeStr && /^\d{1,2}:\d{2}$/.test(String(userTime || "").trim())) {
+          timeStr = String(userTime).trim();
+        }
+        if (!timeStr) timeStr = "05:00";
         var time = String(timeStr).split(":"),
             d1 = new Date(2020, 1, 10, parseInt(time[0],10), parseInt(time[1],10)),
             d2 = new Date(d1.getTime() - offset),
