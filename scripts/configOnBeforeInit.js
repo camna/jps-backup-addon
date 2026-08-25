@@ -250,6 +250,30 @@ function computeDefaultTimeFromNodeId(nodeId) {
   return hh + ":" + mm;
 }
 
+function buildBackupTimeValuesByEnv() {
+  var map = {};
+  try {
+    var resp = jelastic.env.control.GetEnvs();
+    if (!resp || resp.result !== 0 || !resp.infos) return map;
+    for (var i = 0; i < resp.infos.length; i++) {
+      var info = resp.infos[i];
+      var env = info.env || {};
+      var nodeId = pickCpNodeId(info.nodes);
+      if (isEmpty(nodeId)) continue;
+      var time = computeDefaultTimeFromNodeId(nodeId);
+      if (isEmpty(time)) continue;
+      var label = env.envName || env.shortdomain || env.domain || "environment";
+      var caption = time + " — " + label + " (node " + nodeId + ")";
+      if (env.appid) map[String(env.appid)] = caption;
+      if (env.domain) map[String(env.domain)] = caption;
+      if (env.envName) map[String(env.envName)] = caption;
+      if (env.shortdomain) map[String(env.shortdomain)] = caption;
+      map[time] = caption;
+    }
+  } catch (e) {}
+  return map;
+}
+
 import java.util.TimeZone;
 var zones = toNative(TimeZone.getAvailableIDs());
 var values = {};
@@ -270,25 +294,31 @@ jps.settings.main.fields[0].default = scheduleType;
 if (scheduleType == '1') {
     setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
 } else if (scheduleType == '2') {
-    var backupTime = '${settings.backupTime}';
-    var cpNodeIdForTime = "";
-    if (isEmpty(backupTime)) {
-      cpNodeIdForTime = resolveCpMasterNodeId();
-      backupTime = computeDefaultTimeFromNodeId(cpNodeIdForTime);
+    var savedBackupTime = '${settings.backupTime}';
+    var timeValues = buildBackupTimeValuesByEnv();
+    var timeValue = "${env.appid}";
+    if (!isEmpty(savedBackupTime)) timeValue = savedBackupTime;
+
+    // Prefer a direct node-id resolution when Configure has env context
+    var directNodeId = resolveCpMasterNodeId();
+    if (!isEmpty(directNodeId)) {
+      var directTime = computeDefaultTimeFromNodeId(directNodeId);
+      if (!isEmpty(directTime)) {
+        timeValues[directTime] = directTime + " (node " + directNodeId + ")";
+        if (isEmpty(savedBackupTime)) timeValue = directTime;
+      }
     }
+
     jps.settings.main.fields[0].showIf[2][0] = {
-      type: "string",
+      type: "list",
       name: "backupTime",
       caption: "Time",
-      inputType: "time",
-      tooltip: isEmpty(cpNodeIdForTime)
-        ? "Auto from CP node ID on install (last digit = hour, previous two = minutes). Example: node 1164 → 04:16."
-        : ("CP node ID " + cpNodeIdForTime + " → " + backupTime + " (last digit = hour, previous two = minutes)."),
-      default: backupTime,
-      value: backupTime,
-      cls: "x-form-text",
-      width: 120,
-      required: true
+      required: true,
+      editable: false,
+      forceSelection: true,
+      tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16).",
+      value: timeValue,
+      values: timeValues
     };
     var sun = boolSetting('${settings.sun}', true),
         mon = boolSetting('${settings.mon}', true),

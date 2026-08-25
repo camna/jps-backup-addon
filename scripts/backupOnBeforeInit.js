@@ -2,7 +2,6 @@ import java.util.TimeZone;
 var zones = toNative(TimeZone.getAvailableIDs());
 var values = {};
 var defaultTz = "America/New_York";
-var SYSTEM_APPID = "1dd8d191d38fff45e62564fcf67fdcd6";
 
 function isEmpty(v) {
   if (v === null || v === undefined) return true;
@@ -51,155 +50,19 @@ function pickCpNodeId(nodes) {
   return nodes[0] && nodes[0].id ? String(nodes[0].id) : "";
 }
 
-function normalizeEnvName(name) {
-  if (isEmpty(name)) return "";
-  var s = String(name).trim();
-  var dot = s.indexOf(".");
-  if (dot > 0) s = s.substring(0, dot);
-  return s;
-}
-
-function scriptParam(name) {
-  try {
-    var v = getParam(name);
-    if (v === null || v === undefined) return "";
-    v = String(v).trim();
-    if (!v || v.indexOf("$") === 0) return "";
-    return v;
-  } catch (e) {
-    return "";
-  }
-}
-
-function requestParam(name) {
-  try {
-    if (typeof Request === "undefined" || !Request) return "";
-    var v = Request.getParameter(name);
-    if (v === null || v === undefined) return "";
-    v = String(v).trim();
-    if (!v || v.indexOf("$") === 0) return "";
-    return v;
-  } catch (e) {
-    return "";
-  }
-}
-
-function envMatches(env, needle) {
-  if (!env || isEmpty(needle)) return false;
-  var n = String(needle);
-  var shortNeedle = normalizeEnvName(n);
-  return env.envName == n || env.envName == shortNeedle ||
-    env.shortdomain == n || env.shortdomain == shortNeedle ||
-    env.domain == n || env.appid == n ||
-    normalizeEnvName(env.domain) == shortNeedle;
-}
-
-function getEnvInfoByName(name) {
-  if (isEmpty(name)) return null;
-  try {
-    var envInfo = api.env.control.GetEnvInfo(name, session);
-    if (envInfo && envInfo.result == 0 && envInfo.nodes) return envInfo;
-  } catch (e1) {}
-  try {
-    var envInfo2 = jelastic.env.control.GetEnvInfo(name, session);
-    if (envInfo2 && envInfo2.result == 0 && envInfo2.nodes) return envInfo2;
-  } catch (e2) {}
-  return null;
-}
-
-function resolveTargetEnvHints() {
-  var hints = [];
-  var keys = [
-    "envName", "envname", "name", "domain", "envDomain", "envAppid",
-    "appid", "targetEnv", "env", "shortdomain"
-  ];
-  var i, k, v;
-  for (i = 0; i < keys.length; i++) {
-    k = keys[i];
-    v = scriptParam(k);
-    if (!isEmpty(v)) hints.push(v);
-    v = requestParam(k);
-    if (!isEmpty(v)) hints.push(v);
-  }
-  try {
-    if (typeof appid !== "undefined" && appid && String(appid) !== SYSTEM_APPID) {
-      hints.push(String(appid));
-    }
-  } catch (eApp) {}
-  try {
-    if (typeof envName !== "undefined" && !isEmpty(envName)) hints.push(String(envName));
-  } catch (eName) {}
-  try {
-    if (typeof env !== "undefined" && env) {
-      if (env.envName) hints.push(String(env.envName));
-      if (env.name) hints.push(String(env.name));
-      if (env.domain) hints.push(String(env.domain));
-      if (env.appid) hints.push(String(env.appid));
-    }
-  } catch (eEnv) {}
-
-  // Placeholders — substituted only when the platform has env context
-  var placeholders = [
-    '${env.envName}',
-    '${env.name}',
-    '${env.domain}',
-    '${env.appid}',
-    '${env.shortdomain}'
-  ];
-  for (i = 0; i < placeholders.length; i++) {
-    if (!isEmpty(placeholders[i])) hints.push(placeholders[i]);
-  }
-  return hints;
-}
-
-function resolveCpMasterNodeId() {
-  var direct = [
-    '${nodes.cp.master.id}',
-    '${nodes.lemp.master.id}',
-    '${targetNodes.master.id}'
-  ];
-  var d;
-  for (d = 0; d < direct.length; d++) {
-    if (!isEmpty(direct[d])) return String(direct[d]);
-  }
-
-  var hints = resolveTargetEnvHints();
-  var h, name, envInfo, id, resp, i, info, env;
-
-  for (h = 0; h < hints.length; h++) {
-    name = normalizeEnvName(hints[h]);
-    if (isEmpty(name)) name = hints[h];
-    envInfo = getEnvInfoByName(name);
-    if (envInfo) {
-      id = pickCpNodeId(envInfo.nodes);
-      if (!isEmpty(id)) return id;
-    }
-    // appid can be used raw
-    envInfo = getEnvInfoByName(hints[h]);
-    if (envInfo) {
-      id = pickCpNodeId(envInfo.nodes);
-      if (!isEmpty(id)) return id;
-    }
-  }
-
-  // Official-addon pattern: GetEnvs() needs no env placeholder
-  try {
-    resp = jelastic.env.control.GetEnvs();
-    if (resp && resp.result === 0 && resp.infos) {
-      for (i = 0; i < resp.infos.length; i++) {
-        info = resp.infos[i];
-        env = info.env || {};
-        for (h = 0; h < hints.length; h++) {
-          if (envMatches(env, hints[h])) {
-            id = pickCpNodeId(info.nodes);
-            if (!isEmpty(id)) return id;
-          }
-        }
-      }
-    }
-  } catch (eGetEnvs) {}
-
-  return "";
+function computeDefaultTimeFromNodeId(nodeId) {
+  var s = String(nodeId == null ? "" : nodeId).replace(/\D/g, "");
+  if (s.length === 0) return "";
+  if (s.length < 3) s = ("000" + s).slice(-3);
+  var hour = parseInt(s.slice(-1), 10);
+  var minute = parseInt(s.slice(-3, -1), 10);
+  if (isNaN(hour)) hour = 0;
+  if (isNaN(minute)) minute = 0;
+  minute = minute % 60;
+  hour = hour % 24;
+  var hh = (hour < 10 ? "0" : "") + hour;
+  var mm = (minute < 10 ? "0" : "") + minute;
+  return hh + ":" + mm;
 }
 
 function getPlatformSecret(secretName) {
@@ -231,19 +94,35 @@ function applyPlatformSecretDefault(field, secretName) {
   if (!isEmpty(data)) field.default = data;
 }
 
-function computeDefaultTimeFromNodeId(nodeId) {
-  var s = String(nodeId == null ? "" : nodeId).replace(/\D/g, "");
-  if (s.length === 0) return "";
-  if (s.length < 3) s = ("000" + s).slice(-3);
-  var hour = parseInt(s.slice(-1), 10);
-  var minute = parseInt(s.slice(-3, -1), 10);
-  if (isNaN(hour)) hour = 0;
-  if (isNaN(minute)) minute = 0;
-  minute = minute % 60;
-  hour = hour % 24;
-  var hh = (hour < 10 ? "0" : "") + hour;
-  var mm = (minute < 10 ? "0" : "") + minute;
-  return hh + ":" + mm;
+/**
+ * Build list values keyed by env appid/domain/name.
+ * The dashboard later replaces value "${env.appid}" with the real appid
+ * (via SettingsForm.populate), which selects the matching row and shows
+ * the caption "HH:MM (node N)".
+ */
+function buildBackupTimeValuesByEnv() {
+  var map = {};
+  try {
+    var resp = jelastic.env.control.GetEnvs();
+    if (!resp || resp.result !== 0 || !resp.infos) return map;
+    for (var i = 0; i < resp.infos.length; i++) {
+      var info = resp.infos[i];
+      var env = info.env || {};
+      var nodeId = pickCpNodeId(info.nodes);
+      if (isEmpty(nodeId)) continue;
+      var time = computeDefaultTimeFromNodeId(nodeId);
+      if (isEmpty(time)) continue;
+      var label = env.envName || env.shortdomain || env.domain || "environment";
+      var caption = time + " — " + label + " (node " + nodeId + ")";
+      if (env.appid) map[String(env.appid)] = caption;
+      if (env.domain) map[String(env.domain)] = caption;
+      if (env.envName) map[String(env.envName)] = caption;
+      if (env.shortdomain) map[String(env.shortdomain)] = caption;
+      // Also allow selecting by the time itself as a fallback key
+      map[time] = caption;
+    }
+  } catch (e) {}
+  return map;
 }
 
 for (var i = 0, n = zones.length; i < n; i++) {
@@ -264,25 +143,24 @@ if (isEmpty(tzField.value) && isEmpty(tzField.default)) {
 }
 
 var savedBackupTime = '${settings.backupTime}';
-var cpNodeIdForTime = "";
-var resolvedBackupTime = savedBackupTime;
-if (isEmpty(savedBackupTime)) {
-  cpNodeIdForTime = resolveCpMasterNodeId();
-  resolvedBackupTime = computeDefaultTimeFromNodeId(cpNodeIdForTime);
+var timeValues = buildBackupTimeValuesByEnv();
+var timeValue = "${env.appid}";
+if (!isEmpty(savedBackupTime)) {
+  // Reconfigure: keep prior selection (appid key or HH:MM)
+  timeValue = savedBackupTime;
 }
+
 jps.settings.main.fields[0].showIf[2][0] = {
-  type: "string",
+  type: "list",
   name: "backupTime",
   caption: "Time",
-  inputType: "time",
-  tooltip: isEmpty(cpNodeIdForTime)
-    ? "Auto from CP node ID on install (last digit = hour, previous two = minutes). Example: node 1164 → 04:16."
-    : ("CP node ID " + cpNodeIdForTime + " → " + resolvedBackupTime + " (last digit = hour, previous two = minutes)."),
-  default: resolvedBackupTime,
-  value: resolvedBackupTime,
-  cls: "x-form-text",
-  width: 120,
-  required: true
+  required: true,
+  editable: false,
+  forceSelection: true,
+  tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16). Selected automatically for this environment.",
+  // Dashboard replaces ${env.appid} after the form opens, selecting the matching row
+  value: timeValue,
+  values: timeValues
 };
 
 applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
