@@ -87,7 +87,11 @@ function findFieldDefault(name) {
 }
 
 function resolveCpMasterNodeId() {
-  // Hidden field default / URL params / settings (placeholders resolve in the manifest)
+  // Prefer values injected by the parse-safe inline wrapper in backup.jps
+  if (typeof injectedCpNodeId !== "undefined" && !isEmpty(injectedCpNodeId)) {
+    return String(injectedCpNodeId);
+  }
+
   var fromHidden = findFieldDefault("cpNodeId");
   if (!isEmpty(fromHidden)) return fromHidden;
 
@@ -96,6 +100,12 @@ function resolveCpMasterNodeId() {
 
   var fromParam = scriptParam("cpNodeId");
   if (!isEmpty(fromParam)) return fromParam;
+
+  try {
+    if (typeof nodes !== "undefined" && nodes && nodes.cp) {
+      if (nodes.cp.master && nodes.cp.master.id) return String(nodes.cp.master.id);
+    }
+  } catch (eNodes) {}
 
   var resolved = [
     '${nodes.cp.master.id}',
@@ -106,14 +116,25 @@ function resolveCpMasterNodeId() {
   }
 
   var envNames = [
+    normalizeEnvName(typeof injectedEnvName !== "undefined" ? injectedEnvName : ""),
+    normalizeEnvName(typeof injectedEnvDomain !== "undefined" ? injectedEnvDomain : ""),
+    typeof injectedEnvAppid !== "undefined" ? injectedEnvAppid : "",
     normalizeEnvName(scriptParam("envName")),
     normalizeEnvName(scriptParam("envDomain")),
     scriptParam("envAppid"),
+    normalizeEnvName(typeof envName !== "undefined" ? envName : ""),
+    normalizeEnvName(typeof env !== "undefined" && env ? (env.envName || env.name || env.domain || "") : ""),
     normalizeEnvName('${env.envName}'),
     normalizeEnvName('${env.name}'),
     normalizeEnvName('${env.domain}'),
     '${env.appid}'
   ];
+  try {
+    if (typeof appid !== "undefined" && appid && String(appid) !== "1dd8d191d38fff45e62564fcf67fdcd6") {
+      envNames.push(String(appid));
+    }
+  } catch (eApp) {}
+
   for (var e = 0; e < envNames.length; e++) {
     if (isEmpty(envNames[e])) continue;
     try {
