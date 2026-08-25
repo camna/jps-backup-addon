@@ -7,7 +7,38 @@ function isEmpty(v) {
   if (v === null || v === undefined) return true;
   var s = String(v).trim();
   if (/^\$\{settings\.[^}]+\}$/.test(s)) return true;
+  if (/^\$\{secrets\.[^}]+\}$/.test(s)) return true;
+  if (/^\$\{fn\.secret\([^)]*\)\}$/.test(s)) return true;
   return s === "";
+}
+
+function getPlatformSecret(secretName) {
+  try {
+    var resp = api.configuration.secrets.GetSecret({
+      session: session,
+      secretName: secretName
+    });
+    if (resp && resp.result == 0 && resp.secret && !isEmpty(resp.secret.data)) {
+      return String(resp.secret.data);
+    }
+  } catch (e) {}
+  try {
+    var list = api.configuration.secrets.ListSecrets({ session: session });
+    if (list && list.result == 0 && list.secrets) {
+      for (var i = 0, n = list.secrets.length; i < n; i++) {
+        if (list.secrets[i].name == secretName && !isEmpty(list.secrets[i].data)) {
+          return String(list.secrets[i].data);
+        }
+      }
+    }
+  } catch (e2) {}
+  return "";
+}
+
+function applyPlatformSecretDefault(field, secretName) {
+  if (!field || !isEmpty(field.default)) return;
+  var data = getPlatformSecret(secretName);
+  if (!isEmpty(data)) field.default = data;
 }
 
 function computeDefaultTimeFromNodeId(nodeId) {
@@ -55,6 +86,12 @@ if (isEmpty(timeField.default)) {
     }
   }
 }
+
+// Prefill from platform Secret Manager when field defaults are still empty
+applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
+applyPlatformSecretDefault(jps.settings.main.fields[4], "wasabiAccessKeyId");
+applyPlatformSecretDefault(jps.settings.main.fields[5], "wasabiSecretAccessKey");
+applyPlatformSecretDefault(jps.settings.main.fields[6], "resticPassword");
       
 return {
     result: 0,
