@@ -162,11 +162,26 @@ if (scheduleType == '1') {
     setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
 } else if (scheduleType == '2') {
     var backupTime = '${settings.backupTime}';
+    var cpNodeIdForTime = "";
     if (isEmpty(backupTime)) {
-      backupTime = computeDefaultTimeFromNodeId(resolveCpMasterNodeId());
+      cpNodeIdForTime = resolveCpMasterNodeId();
+      backupTime = computeDefaultTimeFromNodeId(cpNodeIdForTime);
     }
-    jps.settings.main.fields[0].showIf[2][0].default = backupTime;
-    jps.settings.main.fields[0].showIf[2][0].value = backupTime;
+    // Replace the whole field (like Days) so inputType:time picks up the value
+    jps.settings.main.fields[0].showIf[2][0] = {
+      type: "string",
+      name: "backupTime",
+      caption: "Time",
+      inputType: "time",
+      tooltip: isEmpty(cpNodeIdForTime)
+        ? "Defaults from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31)."
+        : ("CP node ID " + cpNodeIdForTime + " → " + backupTime + " (last digit = hour, previous two = minutes)."),
+      default: backupTime,
+      value: backupTime,
+      cls: "x-form-text",
+      width: 120,
+      required: true
+    };
     var sun = boolSetting('${settings.sun}', true),
         mon = boolSetting('${settings.mon}', true),
         tue = boolSetting('${settings.tue}', true),
@@ -229,4 +244,7 @@ applyPlatformSecretDefault(jps.settings.main.fields[4], "wasabiAccessKeyId");
 applyPlatformSecretDefault(jps.settings.main.fields[5], "wasabiSecretAccessKey");
 applyPlatformSecretDefault(jps.settings.main.fields[6], "resticPassword");
 
-return settings;
+return {
+  result: 0,
+  settings: jps.settings
+};

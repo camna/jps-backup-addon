@@ -152,11 +152,26 @@ if (isEmpty(tzField.value) && isEmpty(tzField.default)) {
 
 var timeField = jps.settings.main.fields[0].showIf[2][0];
 var savedBackupTime = '${settings.backupTime}';
-var resolvedBackupTime = isEmpty(savedBackupTime)
-  ? computeDefaultTimeFromNodeId(resolveCpMasterNodeId())
-  : savedBackupTime;
-timeField.default = resolvedBackupTime;
-timeField.value = resolvedBackupTime;
+var cpNodeIdForTime = "";
+var resolvedBackupTime = savedBackupTime;
+if (isEmpty(savedBackupTime)) {
+  cpNodeIdForTime = resolveCpMasterNodeId();
+  resolvedBackupTime = computeDefaultTimeFromNodeId(cpNodeIdForTime);
+}
+jps.settings.main.fields[0].showIf[2][0] = {
+  type: "string",
+  name: "backupTime",
+  caption: "Time",
+  inputType: "time",
+  tooltip: isEmpty(cpNodeIdForTime)
+    ? "Defaults from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31)."
+    : ("CP node ID " + cpNodeIdForTime + " → " + resolvedBackupTime + " (last digit = hour, previous two = minutes)."),
+  default: resolvedBackupTime,
+  value: resolvedBackupTime,
+  cls: "x-form-text",
+  width: 120,
+  required: true
+};
 
 // Prefill from platform Secret Manager when field defaults are still empty
 applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
