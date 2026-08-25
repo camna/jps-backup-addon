@@ -123,6 +123,13 @@ function resolveCpMasterNodeId() {
   return "";
 }
 
+function timeFromSavedOrNode(saved, nodeId) {
+  if (isHhMm(saved)) return String(saved).trim();
+  var fromNode = computeDefaultTimeFromNodeId(nodeId);
+  if (!isEmpty(fromNode)) return fromNode;
+  return "05:00";
+}
+
 function getPlatformSecret(secretName) {
   try {
     var resp = api.configuration.secrets.GetSecret({
@@ -152,111 +159,113 @@ function applyPlatformSecretDefault(field, secretName) {
   if (!isEmpty(data)) field.default = data;
 }
 
-var zones = toNative(TimeZone.getAvailableIDs());
-var values = {};
+try {
+  var zones = toNative(TimeZone.getAvailableIDs());
+  var values = {};
 
-for (var i = 0, n = zones.length; i < n; i++) {
-  var offset = TimeZone.getTimeZone(zones[i]).getRawOffset()/3600000;
-  var m = offset % 1;
-  if (m != 0) m = Math.abs(m * 60);
-  if (m < 10) m = "0" + m;
-  var h = Math.floor(offset);
-  if (Math.abs(h) < 10) h = h < 0 ? "-0" + Math.abs(h) : "+0" + h; else if (h >= 0) h = "+" + h;
-  values[zones[i]] = zones[i] + (zones[i] == "GMT" ? "" : " (GMT" + h + ":" + m + ")");
+  for (var i = 0, n = zones.length; i < n; i++) {
+    var offset = TimeZone.getTimeZone(zones[i]).getRawOffset()/3600000;
+    var m = offset % 1;
+    if (m != 0) m = Math.abs(m * 60);
+    if (m < 10) m = "0" + m;
+    var h = Math.floor(offset);
+    if (Math.abs(h) < 10) h = h < 0 ? "-0" + Math.abs(h) : "+0" + h; else if (h >= 0) h = "+" + h;
+    values[zones[i]] = zones[i] + (zones[i] == "GMT" ? "" : " (GMT" + h + ":" + m + ")");
+  }
+
+  if (isEmpty(scheduleType)) scheduleType = "2";
+  jps.settings.main.fields[0].default = scheduleType;
+
+  if (scheduleType == '1') {
+      setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
+  } else if (scheduleType == '2') {
+      // Configure has env/node context. Use a plain HH:MM time field.
+      // initialValue prevents the dashboard from re-applying a saved appid
+      // (left over from the install-time list workaround) onto inputType:time.
+      var savedBackupTime = '${settings.backupTime}';
+      var cpNodeIdForTime = resolveCpMasterNodeId();
+      var backupTime = timeFromSavedOrNode(savedBackupTime, cpNodeIdForTime);
+
+      jps.settings.main.fields[0].showIf[2][0] = {
+        type: "string",
+        name: "backupTime",
+        caption: "Time",
+        inputType: "time",
+        tooltip: isEmpty(cpNodeIdForTime)
+          ? "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 -> 06:31, node 1164 -> 04:16)."
+          : ("CP node ID " + cpNodeIdForTime + " -> " + backupTime + " (last digit = hour, previous two = minutes)."),
+        initialValue: backupTime,
+        default: backupTime,
+        value: backupTime,
+        cls: "x-form-text",
+        width: 120,
+        required: true
+      };
+      var sun = boolSetting('${settings.sun}', true),
+          mon = boolSetting('${settings.mon}', true),
+          tue = boolSetting('${settings.tue}', true),
+          wed = boolSetting('${settings.wed}', true),
+          thu = boolSetting('${settings.thu}', true),
+          fri = boolSetting('${settings.fri}', true),
+          sat = boolSetting('${settings.sat}', true);
+      jps.settings.main.fields[0].showIf[2][1] = {
+        "caption": "Days",
+        "type": "compositefield",
+        "name": "days",
+        "defaultMargins": "0 12 0 0",
+        "items": [
+          { "name": "sun", "value": sun, "type": "checkbox", "caption": "Su" },
+          { "name": "mon", "value": mon, "type": "checkbox", "caption": "Mo" },
+          { "name": "tue", "value": tue, "type": "checkbox", "caption": "Tu" },
+          { "name": "wed", "value": wed, "type": "checkbox", "caption": "We" },
+          { "name": "thu", "value": thu, "type": "checkbox", "caption": "Th" },
+          { "name": "fri", "value": fri, "type": "checkbox", "caption": "Fr" },
+          { "name": "sat", "value": sat, "type": "checkbox", "caption": "Sa" }
+        ]
+      };
+      jps.settings.main.fields[0].showIf[2][2].values = values;
+      var tz = '${settings.tz}';
+      if (isEmpty(tz)) {
+        var existingTz = jps.settings.main.fields[0].showIf[2][2].value || jps.settings.main.fields[0].showIf[2][2].default;
+        tz = isEmpty(existingTz) ? defaultTz : existingTz;
+      }
+      jps.settings.main.fields[0].showIf[2][2].value = tz;
+  } else {
+      setDefaultIfPresent(jps.settings.main.fields[0].showIf[3][0], '${settings.cronTime}');
+  }
+
+  var wasabiEndpoint = '${settings.wasabiEndpoint}';
+  if (isEmpty(wasabiEndpoint)) {
+    var existingEndpoint = jps.settings.main.fields[1].default;
+    wasabiEndpoint = isEmpty(existingEndpoint) ? "s3.us-east-2.wasabisys.com" : existingEndpoint;
+  }
+  jps.settings.main.fields[1].default = wasabiEndpoint;
+
+  var backupScope = '${settings.backupScope}';
+  if (isEmpty(backupScope)) {
+    var existingScope = jps.settings.main.fields[2].default;
+    backupScope = isEmpty(existingScope) ? "both" : existingScope;
+  }
+  jps.settings.main.fields[2].default = backupScope;
+
+  setDefaultIfPresent(jps.settings.main.fields[3], '${settings.wasabiBucket}');
+  setDefaultIfPresent(jps.settings.main.fields[4], '${settings.wasabiAccessKeyId}');
+  setDefaultIfPresent(jps.settings.main.fields[5], '${settings.wasabiSecretAccessKey}');
+  setDefaultIfPresent(jps.settings.main.fields[6], '${settings.resticPassword}');
+  setDefaultIfPresent(jps.settings.main.fields[7], '${settings.backupCount}');
+
+  applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
+  applyPlatformSecretDefault(jps.settings.main.fields[4], "wasabiAccessKeyId");
+  applyPlatformSecretDefault(jps.settings.main.fields[5], "wasabiSecretAccessKey");
+  applyPlatformSecretDefault(jps.settings.main.fields[6], "resticPassword");
+
+  return {
+    result: 0,
+    settings: jps.settings
+  };
+} catch (eConfig) {
+  return {
+    result: 0,
+    settings: jps.settings
+  };
 }
-
-if (isEmpty(scheduleType)) scheduleType = "2";
-jps.settings.main.fields[0].default = scheduleType;
-
-if (scheduleType == '1') {
-    setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
-} else if (scheduleType == '2') {
-    // Configure has env/node context — use a plain time field (HH:MM only).
-    // Ignore saved appid keys from the install-time list workaround.
-    var savedBackupTime = '${settings.backupTime}';
-    var cpNodeIdForTime = resolveCpMasterNodeId();
-    var backupTime = "";
-    if (isHhMm(savedBackupTime)) {
-      backupTime = String(savedBackupTime).trim();
-    } else {
-      backupTime = computeDefaultTimeFromNodeId(cpNodeIdForTime);
-    }
-    if (isEmpty(backupTime)) backupTime = "05:00";
-
-    jps.settings.main.fields[0].showIf[2][0] = {
-      type: "string",
-      name: "backupTime",
-      caption: "Time",
-      inputType: "time",
-      tooltip: isEmpty(cpNodeIdForTime)
-        ? "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16)."
-        : ("CP node ID " + cpNodeIdForTime + " → " + backupTime + " (last digit = hour, previous two = minutes)."),
-      default: backupTime,
-      value: backupTime,
-      cls: "x-form-text",
-      width: 120,
-      required: true
-    };
-    var sun = boolSetting('${settings.sun}', true),
-        mon = boolSetting('${settings.mon}', true),
-        tue = boolSetting('${settings.tue}', true),
-        wed = boolSetting('${settings.wed}', true),
-        thu = boolSetting('${settings.thu}', true),
-        fri = boolSetting('${settings.fri}', true),
-        sat = boolSetting('${settings.sat}', true);
-    var selectedDays = {
-      "caption": "Days",
-      "type": "compositefield",
-      "name": "days",
-      "defaultMargins": "0 12 0 0",
-      "items": [
-        { "name": "sun", "value": sun, "type": "checkbox", "caption": "Su" },
-        { "name": "mon", "value": mon, "type": "checkbox", "caption": "Mo" },
-        { "name": "tue", "value": tue, "type": "checkbox", "caption": "Tu" },
-        { "name": "wed", "value": wed, "type": "checkbox", "caption": "We" },
-        { "name": "thu", "value": thu, "type": "checkbox", "caption": "Th" },
-        { "name": "fri", "value": fri, "type": "checkbox", "caption": "Fr" },
-        { "name": "sat", "value": sat, "type": "checkbox", "caption": "Sa" }
-      ]
-    };
-    jps.settings.main.fields[0].showIf[2][1] = selectedDays;
-    jps.settings.main.fields[0].showIf[2][2].values = values;
-    var tz = '${settings.tz}';
-    if (isEmpty(tz)) {
-      var existingTz = jps.settings.main.fields[0].showIf[2][2].value || jps.settings.main.fields[0].showIf[2][2].default;
-      tz = isEmpty(existingTz) ? defaultTz : existingTz;
-    }
-    jps.settings.main.fields[0].showIf[2][2].value = tz;
-} else {
-    setDefaultIfPresent(jps.settings.main.fields[0].showIf[3][0], '${settings.cronTime}');
-}
-
-var wasabiEndpoint = '${settings.wasabiEndpoint}';
-if (isEmpty(wasabiEndpoint)) {
-  var existingEndpoint = jps.settings.main.fields[1].default;
-  wasabiEndpoint = isEmpty(existingEndpoint) ? "s3.us-east-2.wasabisys.com" : existingEndpoint;
-}
-jps.settings.main.fields[1].default = wasabiEndpoint;
-
-var backupScope = '${settings.backupScope}';
-if (isEmpty(backupScope)) {
-  var existingScope = jps.settings.main.fields[2].default;
-  backupScope = isEmpty(existingScope) ? "both" : existingScope;
-}
-jps.settings.main.fields[2].default = backupScope;
-
-setDefaultIfPresent(jps.settings.main.fields[3], '${settings.wasabiBucket}');
-setDefaultIfPresent(jps.settings.main.fields[4], '${settings.wasabiAccessKeyId}');
-setDefaultIfPresent(jps.settings.main.fields[5], '${settings.wasabiSecretAccessKey}');
-setDefaultIfPresent(jps.settings.main.fields[6], '${settings.resticPassword}');
-setDefaultIfPresent(jps.settings.main.fields[7], '${settings.backupCount}');
-
-applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
-applyPlatformSecretDefault(jps.settings.main.fields[4], "wasabiAccessKeyId");
-applyPlatformSecretDefault(jps.settings.main.fields[5], "wasabiSecretAccessKey");
-applyPlatformSecretDefault(jps.settings.main.fields[6], "resticPassword");
-
-return {
-  result: 0,
-  settings: jps.settings
-};

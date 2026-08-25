@@ -1,4 +1,5 @@
 import java.util.TimeZone;
+
 var zones = toNative(TimeZone.getAvailableIDs());
 var values = {};
 var defaultTz = "America/New_York";
@@ -95,12 +96,10 @@ function applyPlatformSecretDefault(field, secretName) {
 }
 
 /**
- * Build list values keyed by env appid/domain/name.
- * The dashboard later replaces value "${env.appid}" with the real appid
- * (via SettingsForm.populate), which selects the matching row.
- * Captions are plain HH:MM so the field shows only the time.
+ * Map env identifiers -> [{ value: "HH:MM", caption: "HH:MM" }]
+ * Used with dependsOn so the submitted backupTime is HH:MM (not an appid).
  */
-function buildBackupTimeValuesByEnv() {
+function buildBackupTimeDependsMap() {
   var map = {};
   try {
     var resp = jelastic.env.control.GetEnvs();
@@ -112,11 +111,11 @@ function buildBackupTimeValuesByEnv() {
       if (isEmpty(nodeId)) continue;
       var time = computeDefaultTimeFromNodeId(nodeId);
       if (isEmpty(time)) continue;
-      if (env.appid) map[String(env.appid)] = time;
-      if (env.domain) map[String(env.domain)] = time;
-      if (env.envName) map[String(env.envName)] = time;
-      if (env.shortdomain) map[String(env.shortdomain)] = time;
-      map[time] = time;
+      var option = [{ value: time, caption: time }];
+      if (env.appid) map[String(env.appid)] = option;
+      if (env.domain) map[String(env.domain)] = option;
+      if (env.envName) map[String(env.envName)] = option;
+      if (env.shortdomain) map[String(env.shortdomain)] = option;
     }
   } catch (e) {}
   return map;
@@ -140,28 +139,38 @@ if (isEmpty(tzField.value) && isEmpty(tzField.default)) {
 }
 
 var savedBackupTime = '${settings.backupTime}';
-var timeValues = buildBackupTimeValuesByEnv();
-var timeValue = "${env.appid}";
-if (!isEmpty(savedBackupTime)) {
-  // Reconfigure: keep prior selection (appid key or HH:MM)
-  timeValue = savedBackupTime;
-}
+var dependsMap = buildBackupTimeDependsMap();
 
-jps.settings.main.fields[0].showIf[2][0] = {
-  type: "list",
-  name: "backupTime",
-  caption: "Time",
-  required: true,
-  editable: false,
-  forceSelection: true,
-  hideTrigger: true,
-  readOnly: true,
-  width: 120,
-  tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16).",
-  // Dashboard replaces ${env.appid} after the form opens, selecting the matching row
-  value: timeValue,
-  values: timeValues
-};
+// Hidden key filled by the dashboard via ${env.appid} replacement after open.
+// backupTime depends on it and stores plain HH:MM.
+jps.settings.main.fields[0].showIf[2] = [
+  {
+    type: "string",
+    name: "envKey",
+    hidden: true,
+    value: "${env.appid}"
+  },
+  {
+    type: "list",
+    name: "backupTime",
+    caption: "Time",
+    required: true,
+    editable: false,
+    forceSelection: true,
+    hideTrigger: true,
+    width: 120,
+    tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 -> 06:31, node 1164 -> 04:16).",
+    dependsOn: {
+      envKey: dependsMap
+    },
+    value: (!isEmpty(savedBackupTime) && /^\d{1,2}:\d{2}$/.test(String(savedBackupTime).trim()))
+      ? String(savedBackupTime).trim()
+      : "",
+    values: {}
+  },
+  jps.settings.main.fields[0].showIf[2][1],
+  jps.settings.main.fields[0].showIf[2][2]
+];
 
 applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
 applyPlatformSecretDefault(jps.settings.main.fields[4], "wasabiAccessKeyId");
