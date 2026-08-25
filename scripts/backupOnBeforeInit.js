@@ -3,6 +3,13 @@ var zones = toNative(TimeZone.getAvailableIDs());
 var values = {};
 var defaultTz = "America/New_York";
 
+function isEmpty(v) {
+  if (v === null || v === undefined) return true;
+  var s = String(v).trim();
+  if (/^\$\{settings\.[^}]+\}$/.test(s)) return true;
+  return s === "";
+}
+
 function computeDefaultTimeFromNodeId(nodeId) {
   var s = String(nodeId == null ? "" : nodeId).replace(/\D/g, "");
   if (s.length === 0) return "05:00";
@@ -29,16 +36,23 @@ for (var i = 0, n = zones.length; i < n; i++) {
 }
       
 jps.settings.main.fields[0].showIf[2][2].values = values;
-// Default timezone + NodeID-based default time on first install
-jps.settings.main.fields[0].showIf[2][2].value = defaultTz;
 
-var envInfo = api.env.control.GetEnvInfo('${env.envName}', session);
-if (envInfo && envInfo.result == 0 && envInfo.nodes) {
-  var cpNode = envInfo.nodes.filter(function(node) { 
-    return node.nodeGroup == 'cp' && node.ismaster; 
-  })[0];
-  if (cpNode && cpNode.id) {
-    jps.settings.main.fields[0].showIf[2][0].default = computeDefaultTimeFromNodeId(cpNode.id);
+// Preserve marketplace / secret-manager defaults; only fill gaps
+var tzField = jps.settings.main.fields[0].showIf[2][2];
+if (isEmpty(tzField.value) && isEmpty(tzField.default)) {
+  tzField.value = defaultTz;
+}
+
+var timeField = jps.settings.main.fields[0].showIf[2][0];
+if (isEmpty(timeField.default)) {
+  var envInfo = api.env.control.GetEnvInfo('${env.envName}', session);
+  if (envInfo && envInfo.result == 0 && envInfo.nodes) {
+    var cpNode = envInfo.nodes.filter(function(node) { 
+      return node.nodeGroup == 'cp' && node.ismaster; 
+    })[0];
+    if (cpNode && cpNode.id) {
+      timeField.default = computeDefaultTimeFromNodeId(cpNode.id);
+    }
   }
 }
       

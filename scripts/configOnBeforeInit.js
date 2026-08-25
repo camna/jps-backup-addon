@@ -2,7 +2,20 @@ var scheduleType = '${settings.scheduleType}';
 var defaultTz = "America/New_York";
 
 function isEmpty(v) {
-  return v === null || v === undefined || String(v).trim() === "";
+  if (v === null || v === undefined) return true;
+  var s = String(v).trim();
+  // Unresolved JPS placeholders must not wipe marketplace / secret defaults
+  if (/^\$\{settings\.[^}]+\}$/.test(s)) return true;
+  return s === "";
+}
+
+function setDefaultIfPresent(field, value) {
+  if (!isEmpty(value) && field) field.default = value;
+}
+
+function boolSetting(raw, fallback) {
+  if (isEmpty(raw)) return fallback;
+  return String(raw) === "true";
 }
 
 function computeDefaultTimeFromNodeId(nodeId) {
@@ -39,7 +52,7 @@ if (isEmpty(scheduleType)) scheduleType = "2";
 jps.settings.main.fields[0].default = scheduleType;
 
 if (scheduleType == '1') {
-    jps.settings.main.fields[0].showIf[1][0].default = '${settings.cronTime}';
+    setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
 } else if (scheduleType == '2') {
     var envInfo = api.env.control.GetEnvInfo('${env.envName}', session);
     var cpNodeId = "";
@@ -53,15 +66,18 @@ if (scheduleType == '1') {
     } catch (e) {}
 
     var backupTime = '${settings.backupTime}';
-    if (isEmpty(backupTime)) backupTime = computeDefaultTimeFromNodeId(cpNodeId);
+    if (isEmpty(backupTime)) {
+      var existingTime = jps.settings.main.fields[0].showIf[2][0].default;
+      backupTime = isEmpty(existingTime) ? computeDefaultTimeFromNodeId(cpNodeId) : existingTime;
+    }
     jps.settings.main.fields[0].showIf[2][0].default = backupTime;
-    var sun = ('${settings.sun}' === 'true'), 
-        mon = ('${settings.mon}' === 'true'), 
-        tue = ('${settings.tue}' === 'true'), 
-        wed = ('${settings.wed}' === 'true'), 
-        thu = ('${settings.thu}' === 'true'), 
-        fri = ('${settings.fri}' === 'true'), 
-        sat = ('${settings.sat}' === 'true');
+    var sun = boolSetting('${settings.sun}', true),
+        mon = boolSetting('${settings.mon}', true),
+        tue = boolSetting('${settings.tue}', true),
+        wed = boolSetting('${settings.wed}', true),
+        thu = boolSetting('${settings.thu}', true),
+        fri = boolSetting('${settings.fri}', true),
+        sat = boolSetting('${settings.sat}', true);
     var selectedDays = {
       "caption": "Days",
       "type": "compositefield",
@@ -80,25 +96,35 @@ if (scheduleType == '1') {
     jps.settings.main.fields[0].showIf[2][1] = selectedDays;
     jps.settings.main.fields[0].showIf[2][2].values = values;
     var tz = '${settings.tz}';
-    if (isEmpty(tz)) tz = defaultTz;
+    if (isEmpty(tz)) {
+      var existingTz = jps.settings.main.fields[0].showIf[2][2].value || jps.settings.main.fields[0].showIf[2][2].default;
+      tz = isEmpty(existingTz) ? defaultTz : existingTz;
+    }
     jps.settings.main.fields[0].showIf[2][2].value = tz;    
 } else {
-    jps.settings.main.fields[0].showIf[3][0].default = '${settings.cronTime}';
+    setDefaultIfPresent(jps.settings.main.fields[0].showIf[3][0], '${settings.cronTime}');
 }
 
 var wasabiEndpoint = '${settings.wasabiEndpoint}';
-if (isEmpty(wasabiEndpoint)) wasabiEndpoint = "s3.us-east-2.wasabisys.com";
+if (isEmpty(wasabiEndpoint)) {
+  var existingEndpoint = jps.settings.main.fields[1].default;
+  wasabiEndpoint = isEmpty(existingEndpoint) ? "s3.us-east-2.wasabisys.com" : existingEndpoint;
+}
 jps.settings.main.fields[1].default = wasabiEndpoint;
 
 // backupScope is inserted before wasabiBucket in the manifest
 var backupScope = '${settings.backupScope}';
-if (isEmpty(backupScope)) backupScope = "both";
+if (isEmpty(backupScope)) {
+  var existingScope = jps.settings.main.fields[2].default;
+  backupScope = isEmpty(existingScope) ? "both" : existingScope;
+}
 jps.settings.main.fields[2].default = backupScope;
 
-jps.settings.main.fields[3].default = '${settings.wasabiBucket}';
-jps.settings.main.fields[4].default = '${settings.wasabiAccessKeyId}';
-jps.settings.main.fields[5].default = '${settings.wasabiSecretAccessKey}';
-jps.settings.main.fields[6].default = '${settings.resticPassword}';
-jps.settings.main.fields[7].default = '${settings.backupCount}';
+// Only apply settings when present so marketplace / secret-manager defaults are preserved
+setDefaultIfPresent(jps.settings.main.fields[3], '${settings.wasabiBucket}');
+setDefaultIfPresent(jps.settings.main.fields[4], '${settings.wasabiAccessKeyId}');
+setDefaultIfPresent(jps.settings.main.fields[5], '${settings.wasabiSecretAccessKey}');
+setDefaultIfPresent(jps.settings.main.fields[6], '${settings.resticPassword}');
+setDefaultIfPresent(jps.settings.main.fields[7], '${settings.backupCount}');
 
 return settings;
