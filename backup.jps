@@ -143,6 +143,7 @@ settings:
         caption: Secret Access Key
         tooltip: "Wasabi secret access key"
         inputType: password
+        default: ${fn.secret(wasabiSecretAccessKey,)}
         required: true
       - type: string
         name: resticPassword
