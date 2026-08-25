@@ -75,7 +75,8 @@ if (isEmpty(tzField.value) && isEmpty(tzField.default)) {
 }
 
 var timeField = jps.settings.main.fields[0].showIf[2][0];
-if (isEmpty(timeField.default)) {
+var savedBackupTime = '${settings.backupTime}';
+if (isEmpty(savedBackupTime)) {
   var envInfo = api.env.control.GetEnvInfo('${env.envName}', session);
   if (envInfo && envInfo.result == 0 && envInfo.nodes) {
     var cpNode = envInfo.nodes.filter(function(node) { 
@@ -83,8 +84,14 @@ if (isEmpty(timeField.default)) {
     })[0];
     if (cpNode && cpNode.id) {
       timeField.default = computeDefaultTimeFromNodeId(cpNode.id);
+    } else if (isEmpty(timeField.default)) {
+      timeField.default = "05:00";
     }
+  } else if (isEmpty(timeField.default)) {
+    timeField.default = "05:00";
   }
+} else {
+  timeField.default = savedBackupTime;
 }
 
 // Prefill from platform Secret Manager when field defaults are still empty

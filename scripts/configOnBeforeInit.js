@@ -98,8 +98,7 @@ if (scheduleType == '1') {
 
     var backupTime = '${settings.backupTime}';
     if (isEmpty(backupTime)) {
-      var existingTime = jps.settings.main.fields[0].showIf[2][0].default;
-      backupTime = isEmpty(existingTime) ? computeDefaultTimeFromNodeId(cpNodeId) : existingTime;
+      backupTime = computeDefaultTimeFromNodeId(cpNodeId);
     }
     jps.settings.main.fields[0].showIf[2][0].default = backupTime;
     var sun = boolSetting('${settings.sun}', true),
