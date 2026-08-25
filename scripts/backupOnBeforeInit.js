@@ -50,6 +50,15 @@ function pickCpNodeId(nodes) {
   return nodes[0] && nodes[0].id ? nodes[0].id : "";
 }
 
+function normalizeEnvName(name) {
+  if (isEmpty(name)) return "";
+  var s = String(name).trim();
+  // GetEnvInfo requires the short env name, not the FQDN shown in the install UI
+  var dot = s.indexOf(".");
+  if (dot > 0) s = s.substring(0, dot);
+  return s;
+}
+
 function resolveCpMasterNodeId() {
   var resolved = [
     '${nodes.cp.master.id}',
@@ -61,7 +70,11 @@ function resolveCpMasterNodeId() {
     if (!isEmpty(resolved[p])) return resolved[p];
   }
 
-  var envNames = ['${env.envName}', '${env.name}'];
+  var envNames = [
+    normalizeEnvName('${env.envName}'),
+    normalizeEnvName('${env.name}'),
+    normalizeEnvName('${env.domain}')
+  ];
   for (var e = 0; e < envNames.length; e++) {
     if (isEmpty(envNames[e])) continue;
     try {
@@ -139,11 +152,11 @@ if (isEmpty(tzField.value) && isEmpty(tzField.default)) {
 
 var timeField = jps.settings.main.fields[0].showIf[2][0];
 var savedBackupTime = '${settings.backupTime}';
-if (isEmpty(savedBackupTime)) {
-  timeField.default = computeDefaultTimeFromNodeId(resolveCpMasterNodeId());
-} else {
-  timeField.default = savedBackupTime;
-}
+var resolvedBackupTime = isEmpty(savedBackupTime)
+  ? computeDefaultTimeFromNodeId(resolveCpMasterNodeId())
+  : savedBackupTime;
+timeField.default = resolvedBackupTime;
+timeField.value = resolvedBackupTime;
 
 // Prefill from platform Secret Manager when field defaults are still empty
 applyPlatformSecretDefault(jps.settings.main.fields[3], "wasabiBucket");
