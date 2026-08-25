@@ -162,13 +162,13 @@ settings:
         tooltip: "The number of newest backups to be kept during rotation."  
         min: 1
         default: 90
-    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time15
+    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time16
         
   restore:
     fields: []
     onBeforeInit: scripts/multipleRestoreOnBeforeInit.js
       
-onBeforeInit: scripts/backupOnBeforeInit.js?v=20260825-time15
+onBeforeInit: scripts/backupOnBeforeInit.js?v=20260825-time16
 
 
 buttons:
