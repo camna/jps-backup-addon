@@ -132,11 +132,13 @@ settings:
         name: wasabiBucket
         caption: Wasabi Bucket
         tooltip: "Name of the Wasabi bucket for storing backups. You can use the same bucket for multiple sites - each site's backups are stored in a separate folder."
+        default: ${fn.secret(wasabiBucket,)}
         required: true
       - type: string
         name: wasabiAccessKeyId
         caption: Access Key ID
         tooltip: "Wasabi access key ID"
+        default: ${fn.secret(wasabiAccessKeyId,)}
         required: true
       - type: string
         name: wasabiSecretAccessKey
@@ -150,6 +152,7 @@ settings:
         caption: Restic Password
         tooltip: "Password used to encrypt the restic repository. Keep this safe - you cannot restore backups without it!"
         inputType: password
+        default: ${fn.secret(resticPassword,)}
         required: true
       - type: spinner
         name: backupCount
