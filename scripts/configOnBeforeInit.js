@@ -5,8 +5,7 @@ function isEmpty(v) {
   if (v === null || v === undefined) return true;
   var s = String(v).trim();
   // Unresolved JPS placeholders must not wipe marketplace / secret defaults
-  if (/^\$\{settings\.[^}]+\}$/.test(s)) return true;
-  if (/^\$\{secrets\.[^}]+\}$/.test(s)) return true;
+  if (/^\$\{[a-zA-Z0-9_.\[\]]+\}$/.test(s)) return true;
   if (/^\$\{fn\.secret\([^)]*\)\}$/.test(s)) return true;
   return s === "";
 }
@@ -18,6 +17,70 @@ function setDefaultIfPresent(field, value) {
 function boolSetting(raw, fallback) {
   if (isEmpty(raw)) return fallback;
   return String(raw) === "true";
+}
+
+function isMasterNode(node) {
+  return node && (node.ismaster === true || node.ismaster === 1 || String(node.ismaster) === "true");
+}
+
+function isComputeNode(node) {
+  if (!node) return false;
+  if (node.nodeGroup == "cp") return true;
+  var computeTypes = {
+    nginxphp: 1,
+    litespeedphp: 1,
+    "nginxphp-dockerized": 1,
+    lemp: 1,
+    llsmp: 1
+  };
+  return !!computeTypes[node.nodeType];
+}
+
+function pickCpNodeId(nodes) {
+  if (!nodes || !nodes.length) return "";
+  var i, n, node;
+  for (i = 0, n = nodes.length; i < n; i++) {
+    node = nodes[i];
+    if (node.nodeGroup == "cp" && isMasterNode(node) && node.id) return node.id;
+  }
+  for (i = 0, n = nodes.length; i < n; i++) {
+    node = nodes[i];
+    if (node.nodeGroup == "cp" && node.id) return node.id;
+  }
+  for (i = 0, n = nodes.length; i < n; i++) {
+    node = nodes[i];
+    if (isComputeNode(node) && isMasterNode(node) && node.id) return node.id;
+  }
+  for (i = 0, n = nodes.length; i < n; i++) {
+    node = nodes[i];
+    if (isComputeNode(node) && node.id) return node.id;
+  }
+  return nodes[0] && nodes[0].id ? nodes[0].id : "";
+}
+
+function resolveCpMasterNodeId() {
+  var resolved = [
+    '${nodes.cp.master.id}',
+    '${nodes.cp[0].id}',
+    '${nodes.lemp.master.id}',
+    '${nodes.lemp[0].id}'
+  ];
+  for (var p = 0; p < resolved.length; p++) {
+    if (!isEmpty(resolved[p])) return resolved[p];
+  }
+
+  var envNames = ['${env.envName}', '${env.name}'];
+  for (var e = 0; e < envNames.length; e++) {
+    if (isEmpty(envNames[e])) continue;
+    try {
+      var envInfo = api.env.control.GetEnvInfo(envNames[e], session);
+      if (envInfo && envInfo.result == 0 && envInfo.nodes) {
+        var id = pickCpNodeId(envInfo.nodes);
+        if (!isEmpty(id)) return id;
+      }
+    } catch (err) {}
+  }
+  return "";
 }
 
 function getPlatformSecret(secretName) {
@@ -85,20 +148,9 @@ jps.settings.main.fields[0].default = scheduleType;
 if (scheduleType == '1') {
     setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
 } else if (scheduleType == '2') {
-    var envInfo = api.env.control.GetEnvInfo('${env.envName}', session);
-    var cpNodeId = "";
-    try {
-      if (envInfo && envInfo.result == 0 && envInfo.nodes) {
-        var nodes = envInfo.nodes.filter(function(node) { 
-          return node.nodeGroup == 'cp' && node.ismaster; 
-        });
-        if (nodes && nodes[0]) cpNodeId = nodes[0].id;
-      }
-    } catch (e) {}
-
     var backupTime = '${settings.backupTime}';
     if (isEmpty(backupTime)) {
-      backupTime = computeDefaultTimeFromNodeId(cpNodeId);
+      backupTime = computeDefaultTimeFromNodeId(resolveCpMasterNodeId());
     }
     jps.settings.main.fields[0].showIf[2][0].default = backupTime;
     var sun = boolSetting('${settings.sun}', true),
