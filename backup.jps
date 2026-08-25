@@ -160,13 +160,65 @@ settings:
         tooltip: "The number of newest backups to be kept during rotation."  
         min: 1
         default: 90
-    onBeforeInit: scripts/configOnBeforeInit.js?v=20260825-time4&cpNodeId=${nodes.cp.master.id}&envName=${env.envName}&envDomain=${env.domain}&envAppid=${env.appid}
+    onBeforeInit: |
+      var injectedCpNodeId = "${nodes.cp.master.id}";
+      if (!injectedCpNodeId || String(injectedCpNodeId).indexOf("${") === 0) {
+        injectedCpNodeId = "${nodes.cp[0].id}";
+      }
+      if (!injectedCpNodeId || String(injectedCpNodeId).indexOf("${") === 0) {
+        injectedCpNodeId = "";
+      }
+      var injectedEnvName = "${env.envName}";
+      if (!injectedEnvName || String(injectedEnvName).indexOf("${") === 0) injectedEnvName = "";
+      var injectedEnvDomain = "${env.domain}";
+      if (!injectedEnvDomain || String(injectedEnvDomain).indexOf("${") === 0) injectedEnvDomain = "";
+      var injectedEnvAppid = "${env.appid}";
+      if (!injectedEnvAppid || String(injectedEnvAppid).indexOf("${") === 0) injectedEnvAppid = "";
+
+      function __safeInject(v) {
+        return String(v == null ? "" : v).replace(/[^a-zA-Z0-9._-]/g, "");
+      }
+
+      var url = "${baseUrl}/scripts/configOnBeforeInit.js?v=20260825-time5";
+      var code = new com.hivext.api.core.utils.Transport().get(url);
+      var prelude = ""
+        + "var injectedCpNodeId=\"" + __safeInject(injectedCpNodeId) + "\";"
+        + "var injectedEnvName=\"" + __safeInject(injectedEnvName) + "\";"
+        + "var injectedEnvDomain=\"" + __safeInject(injectedEnvDomain) + "\";"
+        + "var injectedEnvAppid=\"" + __safeInject(injectedEnvAppid) + "\";";
+      return eval(prelude + "\n" + code);
         
   restore:
     fields: []
     onBeforeInit: scripts/multipleRestoreOnBeforeInit.js
       
-onBeforeInit: scripts/backupOnBeforeInit.js?v=20260825-time4&cpNodeId=${nodes.cp.master.id}&envName=${env.envName}&envDomain=${env.domain}&envAppid=${env.appid}
+onBeforeInit: |
+  var injectedCpNodeId = "${nodes.cp.master.id}";
+  if (!injectedCpNodeId || String(injectedCpNodeId).indexOf("${") === 0) {
+    injectedCpNodeId = "${nodes.cp[0].id}";
+  }
+  if (!injectedCpNodeId || String(injectedCpNodeId).indexOf("${") === 0) {
+    injectedCpNodeId = "";
+  }
+  var injectedEnvName = "${env.envName}";
+  if (!injectedEnvName || String(injectedEnvName).indexOf("${") === 0) injectedEnvName = "";
+  var injectedEnvDomain = "${env.domain}";
+  if (!injectedEnvDomain || String(injectedEnvDomain).indexOf("${") === 0) injectedEnvDomain = "";
+  var injectedEnvAppid = "${env.appid}";
+  if (!injectedEnvAppid || String(injectedEnvAppid).indexOf("${") === 0) injectedEnvAppid = "";
+
+  function __safeInject(v) {
+    return String(v == null ? "" : v).replace(/[^a-zA-Z0-9._-]/g, "");
+  }
+
+  var url = "${baseUrl}/scripts/backupOnBeforeInit.js?v=20260825-time5";
+  var code = new com.hivext.api.core.utils.Transport().get(url);
+  var prelude = ""
+    + "var injectedCpNodeId=\"" + __safeInject(injectedCpNodeId) + "\";"
+    + "var injectedEnvName=\"" + __safeInject(injectedEnvName) + "\";"
+    + "var injectedEnvDomain=\"" + __safeInject(injectedEnvDomain) + "\";"
+    + "var injectedEnvAppid=\"" + __safeInject(injectedEnvAppid) + "\";";
+  return eval(prelude + "\n" + code);
 
 buttons:
 - caption: Backup Now

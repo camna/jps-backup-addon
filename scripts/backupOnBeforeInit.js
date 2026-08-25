@@ -72,6 +72,11 @@ function scriptParam(name) {
 }
 
 function resolveCpMasterNodeId() {
+  // Injected by inline onBeforeInit wrapper in backup.jps (placeholders resolve in the manifest)
+  if (typeof injectedCpNodeId !== "undefined" && !isEmpty(injectedCpNodeId)) {
+    return String(injectedCpNodeId);
+  }
+
   // Prefer values passed via onBeforeInit URL (manifest placeholders resolve there)
   var fromParam = scriptParam("cpNodeId");
   if (!isEmpty(fromParam)) return fromParam;
@@ -87,6 +92,9 @@ function resolveCpMasterNodeId() {
   }
 
   var envNames = [
+    normalizeEnvName(typeof injectedEnvName !== "undefined" ? injectedEnvName : ""),
+    normalizeEnvName(typeof injectedEnvDomain !== "undefined" ? injectedEnvDomain : ""),
+    typeof injectedEnvAppid !== "undefined" ? injectedEnvAppid : "",
     normalizeEnvName(scriptParam("envName")),
     normalizeEnvName(scriptParam("envDomain")),
     scriptParam("envAppid"),
