@@ -80,13 +80,29 @@ function scriptParam(name) {
   }
 }
 
-function resolveCpMasterNodeId() {
-  // Injected by inline onBeforeInit wrapper in backup.jps (placeholders resolve in the manifest)
-  if (typeof injectedCpNodeId !== "undefined" && !isEmpty(injectedCpNodeId)) {
-    return String(injectedCpNodeId);
-  }
+function findFieldDefault(name) {
+  try {
+    var fields = jps.settings.main.fields;
+    for (var i = 0, n = fields.length; i < n; i++) {
+      if (fields[i] && fields[i].name == name && !isEmpty(fields[i].default)) {
+        return String(fields[i].default);
+      }
+      if (fields[i] && fields[i].name == name && !isEmpty(fields[i].value)) {
+        return String(fields[i].value);
+      }
+    }
+  } catch (e) {}
+  return "";
+}
 
-  // Prefer values passed via onBeforeInit URL (manifest placeholders resolve there)
+function resolveCpMasterNodeId() {
+  // Hidden field default / URL params / settings (placeholders resolve in the manifest)
+  var fromHidden = findFieldDefault("cpNodeId");
+  if (!isEmpty(fromHidden)) return fromHidden;
+
+  var fromSettings = '${settings.cpNodeId}';
+  if (!isEmpty(fromSettings)) return fromSettings;
+
   var fromParam = scriptParam("cpNodeId");
   if (!isEmpty(fromParam)) return fromParam;
 
@@ -99,9 +115,6 @@ function resolveCpMasterNodeId() {
   }
 
   var envNames = [
-    normalizeEnvName(typeof injectedEnvName !== "undefined" ? injectedEnvName : ""),
-    normalizeEnvName(typeof injectedEnvDomain !== "undefined" ? injectedEnvDomain : ""),
-    typeof injectedEnvAppid !== "undefined" ? injectedEnvAppid : "",
     normalizeEnvName(scriptParam("envName")),
     normalizeEnvName(scriptParam("envDomain")),
     scriptParam("envAppid"),
