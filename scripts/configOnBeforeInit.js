@@ -262,13 +262,11 @@ function buildBackupTimeValuesByEnv() {
       if (isEmpty(nodeId)) continue;
       var time = computeDefaultTimeFromNodeId(nodeId);
       if (isEmpty(time)) continue;
-      var label = env.envName || env.shortdomain || env.domain || "environment";
-      var caption = time + " — " + label + " (node " + nodeId + ")";
-      if (env.appid) map[String(env.appid)] = caption;
-      if (env.domain) map[String(env.domain)] = caption;
-      if (env.envName) map[String(env.envName)] = caption;
-      if (env.shortdomain) map[String(env.shortdomain)] = caption;
-      map[time] = caption;
+      if (env.appid) map[String(env.appid)] = time;
+      if (env.domain) map[String(env.domain)] = time;
+      if (env.envName) map[String(env.envName)] = time;
+      if (env.shortdomain) map[String(env.shortdomain)] = time;
+      map[time] = time;
     }
   } catch (e) {}
   return map;
@@ -316,6 +314,9 @@ if (scheduleType == '1') {
       required: true,
       editable: false,
       forceSelection: true,
+      hideTrigger: true,
+      readOnly: true,
+      width: 120,
       tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16).",
       value: timeValue,
       values: timeValues

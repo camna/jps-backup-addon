@@ -97,8 +97,8 @@ function applyPlatformSecretDefault(field, secretName) {
 /**
  * Build list values keyed by env appid/domain/name.
  * The dashboard later replaces value "${env.appid}" with the real appid
- * (via SettingsForm.populate), which selects the matching row and shows
- * the caption "HH:MM (node N)".
+ * (via SettingsForm.populate), which selects the matching row.
+ * Captions are plain HH:MM so the field shows only the time.
  */
 function buildBackupTimeValuesByEnv() {
   var map = {};
@@ -112,14 +112,11 @@ function buildBackupTimeValuesByEnv() {
       if (isEmpty(nodeId)) continue;
       var time = computeDefaultTimeFromNodeId(nodeId);
       if (isEmpty(time)) continue;
-      var label = env.envName || env.shortdomain || env.domain || "environment";
-      var caption = time + " — " + label + " (node " + nodeId + ")";
-      if (env.appid) map[String(env.appid)] = caption;
-      if (env.domain) map[String(env.domain)] = caption;
-      if (env.envName) map[String(env.envName)] = caption;
-      if (env.shortdomain) map[String(env.shortdomain)] = caption;
-      // Also allow selecting by the time itself as a fallback key
-      map[time] = caption;
+      if (env.appid) map[String(env.appid)] = time;
+      if (env.domain) map[String(env.domain)] = time;
+      if (env.envName) map[String(env.envName)] = time;
+      if (env.shortdomain) map[String(env.shortdomain)] = time;
+      map[time] = time;
     }
   } catch (e) {}
   return map;
@@ -157,7 +154,10 @@ jps.settings.main.fields[0].showIf[2][0] = {
   required: true,
   editable: false,
   forceSelection: true,
-  tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16). Selected automatically for this environment.",
+  hideTrigger: true,
+  readOnly: true,
+  width: 120,
+  tooltip: "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 → 06:31, node 1164 → 04:16).",
   // Dashboard replaces ${env.appid} after the form opens, selecting the matching row
   value: timeValue,
   values: timeValues
