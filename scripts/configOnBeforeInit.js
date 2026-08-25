@@ -179,27 +179,32 @@ try {
   if (scheduleType == '1') {
       setDefaultIfPresent(jps.settings.main.fields[0].showIf[1][0], '${settings.cronTime}');
   } else if (scheduleType == '2') {
-      // Configure has env/node context. Use a plain HH:MM time field.
-      // initialValue prevents the dashboard from re-applying a saved appid
-      // (left over from the install-time list workaround) onto inputType:time.
+      // Configure has env/node context. Do NOT use inputType:time here:
+      // older installs saved backupTime as an env appid (install list workaround),
+      // and the dashboard re-applies that onto a time field and crashes the form.
+      // A single-option list accepts only HH:MM and ignores a bad saved appid.
       var savedBackupTime = '${settings.backupTime}';
       var cpNodeIdForTime = resolveCpMasterNodeId();
       var backupTime = timeFromSavedOrNode(savedBackupTime, cpNodeIdForTime);
 
       jps.settings.main.fields[0].showIf[2][0] = {
-        type: "string",
+        type: "list",
         name: "backupTime",
         caption: "Time",
-        inputType: "time",
+        required: true,
+        editable: false,
+        forceSelection: true,
+        hideTrigger: true,
+        width: 120,
         tooltip: isEmpty(cpNodeIdForTime)
           ? "Backup time from the CP node ID: last digit = hour, previous two digits = minutes (e.g. node 316 -> 06:31, node 1164 -> 04:16)."
           : ("CP node ID " + cpNodeIdForTime + " -> " + backupTime + " (last digit = hour, previous two = minutes)."),
         initialValue: backupTime,
         default: backupTime,
         value: backupTime,
-        cls: "x-form-text",
-        width: 120,
-        required: true
+        values: [
+          { value: backupTime, caption: backupTime }
+        ]
       };
       var sun = boolSetting('${settings.sun}', true),
           mon = boolSetting('${settings.mon}', true),
